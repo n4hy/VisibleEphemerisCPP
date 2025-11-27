@@ -1,31 +1,53 @@
 #include "pass_predictor.hpp"
+#include <iostream>
+
 namespace ve {
     PassPredictor::PassPredictor(const Observer& obs) : observer_(obs) {}
-    std::vector<PassDetails> PassPredictor::predict(const Satellite& sat, const TimePoint& start, const TimePoint& end) {
-        std::vector<PassDetails> passes;
-        auto step = std::chrono::minutes(1);
-        bool was_above = (observer_.calculateLookAngle(sat.propagate(start).first, start).elevation > 0);
-        TimePoint t = start;
-        PassDetails p;
-        if (was_above) p.aos = start;
 
-        while (t < end) {
-            TimePoint next = t + step;
-            bool is_above = (observer_.calculateLookAngle(sat.propagate(next).first, next).elevation > 0);
-            if (!was_above && is_above) {
-                p.sat_id = sat.getNoradId(); p.aos = t; 
-                p.max_el_deg = 0;
-            } else if (was_above && !is_above) {
-                p.los = t; 
-                p.max_el_time = p.aos + (p.los - p.aos)/2;
-                auto [pos, vel] = sat.propagate(p.max_el_time);
-                p.max_el_deg = observer_.calculateLookAngle(pos, p.max_el_time).elevation;
-                auto state = VisibilityCalculator::calculateState(pos, observer_.getPositionECI(p.max_el_time), p.max_el_time, p.max_el_deg);
-                p.is_visible = (state == VisibilityCalculator::State::VISIBLE);
-                passes.push_back(p);
-            }
-            was_above = is_above; t = next;
+    double PassPredictor::getElevation(const Satellite& sat, const TimePoint& t) {
+        auto [pos, vel] = sat.propagate(t);
+        return observer_.calculateLookAngle(pos, t).elevation;
+    }
+
+    TimePoint PassPredictor::solveNewton(const Satellite& sat, TimePoint initial_guess) {
+        TimePoint t = initial_guess;
+        double epsilon = 0.01; 
+        int max_iter = 10;
+        for(int i=0; i<max_iter; ++i) {
+            double el = getElevation(sat, t);
+            if (std::abs(el) < epsilon) return t;
+            TimePoint t_plus = t + std::chrono::seconds(1);
+            double el_plus = getElevation(sat, t_plus);
+            double deriv = (el_plus - el); 
+            if (std::abs(deriv) < 1e-5) break; 
+            double delta_sec = el / deriv;
+            if (delta_sec > 600) delta_sec = 600; if (delta_sec < -600) delta_sec = -600;
+            t = t - std::chrono::milliseconds((long)(delta_sec * 1000));
         }
-        return passes;
+        return t;
+    }
+
+    std::vector<Satellite::PassEvent> PassPredictor::predict(Satellite& sat, const TimePoint& start, int search_window_mins) {
+        std::vector<Satellite::PassEvent> results;
+        TimePoint t = start;
+        TimePoint end = start + std::chrono::minutes(search_window_mins);
+        auto step = std::chrono::minutes(2); 
+        double prev_el = getElevation(sat, t);
+        
+        while (t < end) {
+            TimePoint next_t = t + step;
+            double next_el = getElevation(sat, next_t);
+            
+            if ((prev_el < 0 && next_el >= 0) || (prev_el >= 0 && next_el < 0)) {
+                TimePoint crossing = solveNewton(sat, t + step/2);
+                double el_check = getElevation(sat, crossing + std::chrono::seconds(1));
+                double el_at = getElevation(sat, crossing);
+                double slope = el_check - el_at;
+                results.push_back({crossing, (slope > 0)});
+            }
+            prev_el = next_el;
+            t = next_t;
+        }
+        return results;
     }
 }

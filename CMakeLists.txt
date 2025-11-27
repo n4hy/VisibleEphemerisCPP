@@ -40,6 +40,9 @@ set(SOURCES
     src/tle_manager.cpp
     src/display.cpp
     src/web_server.cpp
+    src/text_server.cpp
+    src/config_manager.cpp
+    src/logger.cpp
 )
 
 include_directories(include)

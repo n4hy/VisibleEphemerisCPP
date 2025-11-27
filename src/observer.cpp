@@ -13,7 +13,7 @@ namespace ve {
         double gmst_now_sec = gmst_0h + (ut_hours * 3600.0 * 1.00273790935);
         gmst_now_sec = std::fmod(gmst_now_sec, 86400.0);
         if (gmst_now_sec < 0) gmst_now_sec += 86400.0;
-        return gmst_now_sec * (2.0 * PI / 86400.0);
+        return (gmst_now_sec / 240.0) * DEG2RAD;
     }
 
     Vector3 Observer::getPositionECI(const TimePoint& t) const {
@@ -27,6 +27,20 @@ namespace ve {
         double theta = getGST(t);
         return { x_ecf * std::cos(theta) - y_ecf * std::sin(theta),
                  x_ecf * std::sin(theta) + y_ecf * std::cos(theta), z_ecf };
+    }
+
+    Vector3 Observer::getVelocityECI(const TimePoint& t) const {
+        Vector3 pos = getPositionECI(t);
+        constexpr double omega = 7.2921159e-5;
+        return { -omega * pos.y, omega * pos.x, 0.0 };
+    }
+
+    double Observer::calculateRangeRate(const Vector3& sat_pos, const Vector3& sat_vel, const TimePoint& t) const {
+        Vector3 obs_pos = getPositionECI(t);
+        Vector3 obs_vel = getVelocityECI(t);
+        Vector3 r = sat_pos - obs_pos;
+        Vector3 v = sat_vel - obs_vel;
+        return r.dot(v) / r.magnitude();
     }
 
     Observer::LookAngle Observer::calculateLookAngle(const Vector3& sat_eci, const TimePoint& t) const {

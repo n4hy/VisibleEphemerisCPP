@@ -5,6 +5,8 @@
 #include <thread>
 #include <mutex>
 #include "display.hpp"
+#include "satellite.hpp"
+#include "config_manager.hpp" 
 
 namespace ve {
     class WebServer {
@@ -13,7 +15,8 @@ namespace ve {
         ~WebServer();
         void start();
         void stop();
-        void updateData(const std::vector<DisplayRow>& rows);
+        // Updated to accept Config
+        void updateData(const std::vector<DisplayRow>& rows, const std::vector<Satellite*>& raw_sats, const AppConfig& config);
 
     private:
         int port_;
@@ -24,6 +27,6 @@ namespace ve {
         std::string current_json_data_;
 
         void serverLoop();
-        std::string buildJson(const std::vector<DisplayRow>& rows);
+        std::string buildJson(const std::vector<DisplayRow>& rows, const std::vector<Satellite*>& raw_sats, const AppConfig& config);
     };
 }

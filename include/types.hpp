@@ -3,6 +3,7 @@
 #include <string>
 #include <chrono>
 #include <ctime>
+#include <deque>
 
 namespace ve {
     using Clock = std::chrono::system_clock;
@@ -23,7 +24,7 @@ namespace ve {
 
     struct Geodetic { double lat_deg; double lon_deg; double alt_km; };
 
-    constexpr double EARTH_RADIUS_KM = 6378.137; // WGS84 a
+    constexpr double EARTH_RADIUS_KM = 6378.137; 
     constexpr double PI = 3.14159265358979323846;
     constexpr double DEG2RAD = PI / 180.0;
     constexpr double RAD2DEG = 180.0 / PI;
