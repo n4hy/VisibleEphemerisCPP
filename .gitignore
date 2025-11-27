@@ -1,7 +1,10 @@
+tle_cache/
 build/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
 Makefile
 VisibleEphemeris
+config.yaml
+ve_log.txt
 
