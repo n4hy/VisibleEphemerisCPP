@@ -49,7 +49,7 @@ namespace ve {
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, "VisibleEphemeris/12.60");
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "VisibleEphemeris/12.64");
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
         CURLcode res = curl_easy_perform(curl);

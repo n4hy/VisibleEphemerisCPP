@@ -66,7 +66,7 @@ namespace ve {
         drawHeader(obs, t, rows.size(), total_tracked, filter_kept);
         
         std::time_t tt = Clock::to_time_t(t);
-        ss << "VISIBLE EPHEMERIS v12.61-TRUE-ALL-MODE\n";
+        ss << "VISIBLE EPHEMERIS v12.64-CODE-ONLY\n";
         ss << std::put_time(std::gmtime(&tt), "%Y-%m-%d %H:%M:%S UTC") << "\n";
         auto loc = obs.getLocation();
         ss << "OBS: " << loc.lat_deg << ", " << loc.lon_deg << " | SHOWN: " << rows.size() << "\n\n";
@@ -190,7 +190,7 @@ namespace ve {
         
         attron(COLOR_PAIR(5));
         move(0,0);
-        printw("VISIBLE EPHEMERIS v12.61-TRUE-ALL-MODE - CONF: config.yaml");
+        printw("VISIBLE EPHEMERIS v12.64-CODE-ONLY - CONF: config.yaml");
         for(int k=getcurx(stdscr); k<COLS-30; k++) addch(' '); 
         mvprintw(0, COLS-30, "%s", time_buf);
         attroff(COLOR_PAIR(5));

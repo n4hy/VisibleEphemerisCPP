@@ -55,7 +55,7 @@ namespace ve {
     </style>
 </head>
 <body>
-    <div id="curtain"><h1>Loading v12.61...</h1></div>
+    <div id="curtain"><h1>Loading v12.64...</h1></div>
     <div class="container">
         <div class="sidebar">
             <div class="header"><div><h2>VISIBLE EPHEMERIS</h2><div id="status">Connecting...</div></div><button class="view-toggle" onclick="toggleView()">MAP / SKY</button></div>
@@ -89,7 +89,11 @@ namespace ve {
             ctx.beginPath(); ctx.moveTo(cx, cy-r); ctx.lineTo(cx, cy+r); ctx.stroke();
             ctx.fillStyle='#00ff00'; ctx.font='16px monospace'; ctx.fillText('N',cx-5,cy-r-10); ctx.fillText('E',cx+r+10,cy+5);
             data.forEach(s => {
-                if(s.e<0) return;
+                // SKYPLOT FILTER: Only show satellites above horizon (or min_el)
+                // Even in Radio Mode, skyplot usually implies "What I can see/hear now"
+                // If it's -40 deg el, it shouldn't be on the radar.
+                if(s.e < 0) return;
+
                 var dist=r*(90-s.e)/90.0; var rad=(s.a-90)*(Math.PI/180.0);
                 var x=cx+dist*Math.cos(rad); var y=cy+dist*Math.sin(rad);
                 if(s.id===selectedId) {
@@ -117,22 +121,30 @@ namespace ve {
         }
         function renderMap(config) {
             if(currentView==='sky') return;
+            
+            // 1. DRAW OBSERVER HOUSE
             if (!houseMarker && config) {
                 houseMarker = L.marker([config.lat, config.lon], {
                     icon: L.divIcon({html: '🏠', className: 'house-icon', iconSize: [30,30], iconAnchor: [15,15]})
                 }).addTo(map).bindPopup("Observer Location");
             }
+
+            // 2. ROBUST ZOOM LOGIC - RETRY UNTIL SIZE IS VALID
             if (!initialZoomDone && config.max_apo > 0) {
-                setTimeout(function() {
-                    if (map.getSize().x > 0) {
-                        var horizonKm = Math.sqrt(2 * 6378.0 * config.max_apo); 
-                        var degRadius = (horizonKm / 111.0) * 1.22; 
-                        map.invalidateSize();
-                        map.fitBounds([[config.lat - degRadius, config.lon - degRadius],[config.lat + degRadius, config.lon + degRadius]]);
-                        initialZoomDone = true;
-                    } else { map.setView([config.lat, config.lon], 3); }
-                }, 500); 
-            } else if (!initialZoomDone) { map.setView([config.lat, config.lon], 3); }
+                if (map.getSize().x > 0) {
+                    var horizonKm = Math.sqrt(2 * 6378.0 * config.max_apo); 
+                    var degRadius = (horizonKm / 111.0) * 1.22; 
+                    map.fitBounds([
+                        [config.lat - degRadius, config.lon - degRadius],
+                        [config.lat + degRadius, config.lon + degRadius]
+                    ]);
+                    initialZoomDone = true;
+                } else {
+                    // Map container not ready, keep invalidateSize to force layout update
+                    map.invalidateSize(); 
+                }
+            }
+
             var currentIds=new Set();
             lastData.forEach(s=>{
                 currentIds.add(s.id);
@@ -146,7 +158,14 @@ namespace ve {
             for(var id in markers) if(!currentIds.has(parseInt(id))) { map.removeLayer(markers[id]); delete markers[id]; }
             for(var id in polylines) if(!currentIds.has(parseInt(id))) { map.removeLayer(polylines[id]); delete polylines[id]; }
         }
-        function updateSats() { fetch('/api/satellites?t='+Date.now()).then(r=>r.json()).then(d=>{ document.getElementById('status').innerText="Live: "+d.satellites.length; lastData=d.satellites; renderMap(d.config); renderTable(); }).catch(e=>console.error(e)); }
+        function updateSats() { 
+            fetch('/api/satellites?t='+Date.now()).then(r=>r.json()).then(d=>{ 
+                document.getElementById('status').innerText="Live: "+d.satellites.length; 
+                lastData=d.satellites; 
+                renderMap(d.config); 
+                renderTable(); 
+            }).catch(e=>console.error(e)); 
+        }
         setInterval(updateSats, 1000); updateSats(); requestAnimationFrame(animate);
     </script>
 </body>

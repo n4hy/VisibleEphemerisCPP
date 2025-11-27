@@ -36,7 +36,6 @@ namespace ve {
             if (data.count("max_apo")) cfg.max_apo = std::stod(data["max_apo"]);
             if (data.count("trail_length_mins")) cfg.trail_length_mins = std::stoi(data["trail_length_mins"]);
             if (data.count("group_selection")) cfg.group_selection = data["group_selection"];
-            // FIX: LOAD BOOLEAN FLAG
             if (data.count("show_all_visible")) cfg.show_all_visible = (data["show_all_visible"] == "true" || data["show_all_visible"] == "1");
         } catch(...) {}
         return cfg;
@@ -51,7 +50,6 @@ namespace ve {
         file << "max_apo: " << config.max_apo << "\n";
         file << "trail_length_mins: " << config.trail_length_mins << "\n";
         file << "group_selection: " << config.group_selection << "\n";
-        // FIX: SAVE BOOLEAN FLAG
         file << "show_all_visible: " << (config.show_all_visible ? "true" : "false") << "\n";
         file.close();
     }

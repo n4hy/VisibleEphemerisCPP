@@ -32,7 +32,7 @@ namespace ve {
         
         void setBlocking(bool blocking);
         
-        // THREAD SAFE GETTER - FIX: REMOVED INLINE BODY FROM HEADER
+        // THREAD SAFE GETTER
         std::string getLastFrame() const; 
 
     private:

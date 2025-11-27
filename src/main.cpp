@@ -1,3 +1,10 @@
+#include <iostream>
+#include <vector>
+#include <thread>
+#include <algorithm>
+#include <atomic>
+#include <csignal>
+#include <sstream>
 #include "satellite.hpp"
 #include "observer.hpp"
 #include "visibility.hpp"
@@ -9,12 +16,6 @@
 #include "pass_predictor.hpp"
 #include "thread_pool.hpp"
 #include "logger.hpp"
-#include <iostream>
-#include <vector>
-#include <thread>
-#include <algorithm>
-#include <atomic>
-#include <csignal>
 
 using namespace ve;
 
@@ -47,6 +48,7 @@ int main(int argc, char* argv[]) {
     
     ConfigManager config_mgr("config.yaml");
     AppConfig config = config_mgr.load();
+    // Default to approximate user location if zero
     if (config.lat == 0.0 && config.lon == 0.0) { config.lat = 39.5478; config.lon = -76.0916; }
 
     bool refresh_tle = false;
@@ -62,7 +64,7 @@ int main(int argc, char* argv[]) {
         else if (arg == "--minel") { if (i+1 < argc) config.min_el = std::stod(argv[++i]); }
         else if (arg == "--all") { config.show_all_visible = true; }
         else if (arg == "--groupsel") { if (i+1 < argc) config.group_selection = argv[++i]; }
-        else if (arg == "--no-visible") { config.show_all_visible = true; } // NEW FLAG
+        else if (arg == "--no-visible") { config.show_all_visible = true; } 
         else if (arg == "--refresh") { refresh_tle = true; }
     }
     
@@ -87,70 +89,43 @@ int main(int argc, char* argv[]) {
 
         Observer observer(config.lat, config.lon, config.alt);
         
-        Display display; 
-        display.setBlocking(true); 
-        
-        ThreadPool pool(4); 
-        PassPredictor predictor(observer);
-        
-        web_server.start();
-        text_server.start();
+        // SHARED STATE FOR UI HANDOFF
+        SharedState state;
+        std::atomic<bool> running(true);
 
-        auto last_calc_time = Clock::now();
-        bool first_run = true;
-        std::vector<DisplayRow> final_list;
-
-        Logger::log("Main Loop Starting");
-
-        while (true) {
-            display.setBlocking(true);
-            auto input_res = display.handleInput();
+        // BACKGROUND MATH THREAD
+        std::thread math_thread([&]() {
+            ThreadPool pool(4); 
+            PassPredictor predictor(observer);
             
-            if (input_res == Display::InputResult::SAVE_AND_QUIT) { config_mgr.save(config); break; }
-            else if (input_res == Display::InputResult::QUIT_NO_SAVE) { break; }
-
-            auto now = Clock::now();
-            if (first_run || std::chrono::duration_cast<std::chrono::milliseconds>(now - last_calc_time).count() > 1000) {
-                last_calc_time = now;
-                first_run = false;
-                
-                final_list.clear();
-                std::vector<Satellite*> active_sats;
-
-                display.setBlocking(false);
-                int sat_count = 0;
-                bool break_inner = false;
+            while(running) {
+                auto now = Clock::now();
+                // FIX: Variable names declared here must match usage below
+                std::vector<DisplayRow> local_rows;
+                std::vector<Satellite*> local_sats;
 
                 for(auto& sat : sats) {
-                    if (break_inner) break;
-
-                    sat_count++;
-                    if (sat_count % 50 == 0) {
-                        auto ir = display.handleInput();
-                        if (ir == Display::InputResult::BREAK_LOOP) {
-                            break_inner = true; 
-                        }
-                    }
-
+                    if(!running) break;
                     if (config.max_apo > 0 && sat.getApogeeKm() > config.max_apo) continue;
 
                     auto [pos, vel] = sat.propagate(now);
                     auto look = observer.calculateLookAngle(pos, now);
                     double rrate = observer.calculateRangeRate(pos, vel, now);
 
-                    // NEW LOGIC: If show_all_visible (--no-visible) is true, we BYPASS Elevation Filter
+                    // LOGIC: Filter based on visibility settings
                     if (config.show_all_visible) {
-                        // NO FILTER: Add everything, even negative EL
+                        // Radio mode: Add everything above horizon (handled by min_el usually, or just add)
                     } else {
-                        // OPTICAL MODE: Must meet El AND be optically visible
+                        // Optical Mode: Must meet El AND be optically visible
                         if (look.elevation < config.min_el) continue;
-                        auto state = VisibilityCalculator::calculateState(pos, observer.getPositionECI(now), now, look.elevation);
-                        if (state != VisibilityCalculator::State::VISIBLE) continue;
+                        auto check_state = VisibilityCalculator::calculateState(pos, observer.getPositionECI(now), now, look.elevation);
+                        if (check_state != VisibilityCalculator::State::VISIBLE) continue;
                     }
 
-                    // Recalculate state for display row
-                    auto state = VisibilityCalculator::calculateState(pos, observer.getPositionECI(now), now, look.elevation);
+                    // Recalculate state for display row (redundant but safe)
+                    auto state_val = VisibilityCalculator::calculateState(pos, observer.getPositionECI(now), now, look.elevation);
 
+                    // Async Compute Pass/Trail if missing
                     bool needs_update = sat.getPredictedPasses().empty() || sat.getFullTrackCopy().empty();
                     if (needs_update && !sat.is_computing.exchange(true)) {
                         pool.enqueue([&sat, &predictor, now, config]() {
@@ -175,20 +150,61 @@ int main(int argc, char* argv[]) {
                         }
                         
                         auto geo = sat.getGeodetic(now);
-                        final_list.push_back({sat.getName(), look.azimuth, look.elevation, look.range, rrate, geo.lat_deg, geo.lon_deg, sat.getApogeeKm(), state, sat.getNoradId(), next_event_str});
-                        active_sats.push_back(&sat);
+                        
+                        // FIX: Ensure we use the variables declared at top of loop (local_rows, local_sats)
+                        local_rows.push_back({sat.getName(), look.azimuth, look.elevation, look.range, rrate, geo.lat_deg, geo.lon_deg, sat.getApogeeKm(), state_val, sat.getNoradId(), next_event_str});
+                        local_sats.push_back(&sat);
+                }
+
+                // Sort by Elevation (Descending)
+                std::sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
+                
+                // Crop to max_sats
+                if (local_rows.size() > (size_t)config.max_sats) local_rows.resize(config.max_sats);
+
+                // PUSH TO SHARED STATE
+                {
+                    std::lock_guard<std::mutex> lock(state.mutex);
+                    state.rows = local_rows;
+                    state.active_sats = local_sats;
+                    state.updated = true;
                 }
                 
-                if (!break_inner) {
-                    std::sort(final_list.begin(), final_list.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
-                    if (final_list.size() > (size_t)config.max_sats) final_list.resize(config.max_sats);
-                    web_server.updateData(final_list, active_sats, config); 
+                // Throttle Math Loop (50ms)
+                for(int i=0; i<20; ++i) { if(!running) break; std::this_thread::sleep_for(std::chrono::milliseconds(50)); }
+            }
+        });
+
+        // UI THREAD (MAIN)
+        Display display; 
+        web_server.start();
+        text_server.start();
+        Logger::log("UI Loop Started");
+
+        while (true) {
+            auto input = display.handleInput();
+            if (input == Display::InputResult::SAVE_AND_QUIT) { config_mgr.save(config); running=false; break; }
+            else if (input == Display::InputResult::QUIT_NO_SAVE) { running=false; break; }
+
+            // Check for new data
+            std::vector<DisplayRow> current_rows;
+            {
+                std::lock_guard<std::mutex> lock(state.mutex);
+                if (state.updated) {
+                    current_rows = state.rows;
+                    web_server.updateData(state.rows, state.active_sats, config);
+                } else {
+                    current_rows = state.rows; // Use last known good frame
                 }
             }
-            display.update(final_list, observer, now, sats.size(), final_list.size(), config.show_all_visible, config.min_el);
-            text_server.updateData(display.getLastFrame()); 
+            
+            display.update(current_rows, observer, Clock::now(), sats.size(), current_rows.size(), config.show_all_visible, config.min_el);
+            text_server.updateData(display.getLastFrame());
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(50)); // 20FPS UI
         }
 
+        if(math_thread.joinable()) math_thread.join();
         web_server.stop();
         text_server.stop();
         Logger::log("Shutdown Complete");
