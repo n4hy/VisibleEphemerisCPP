@@ -148,6 +148,6 @@ sudo ufw allow 12345
 
 ## 📜 License & Credits
 * **Author**: Dr. Robert W. McGwier, PhD (N4HY)
-* **Implementation Partner**: Gemini (AI)
-* **Based on**: *Quiktrak* (1986)
+* **Implementation Partner**: Gemini (AI) for WEB UI
+* **Based on**: *Quiktrak* (1981 VBasic, 1983 Commodore C, IBM C 1986,1990,1999)
 * **License**: MIT (or as specified by Author)
