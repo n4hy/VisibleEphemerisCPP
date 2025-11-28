@@ -11,7 +11,6 @@ namespace ve {
         return {R*std::cos(lam), R*std::cos(eps)*std::sin(lam), R*std::sin(eps)*std::sin(lam)};
     }
     VisibilityCalculator::State VisibilityCalculator::calculateState(const Vector3& sat, const Vector3& obs, const TimePoint& t, double el) {
-        if (el < 0) return State::BELOW_HORIZON;
         Vector3 sun = getSunPositionECI(t);
         double umbra = std::asin(EARTH_RADIUS_KM / sat.magnitude());
         double angle = std::acos(sat.normalize().dot(sun.normalize()));

@@ -100,7 +100,6 @@ int main(int argc, char* argv[]) {
             
             while(running) {
                 auto now = Clock::now();
-                // FIX: Variable names declared here must match usage below
                 std::vector<DisplayRow> local_rows;
                 std::vector<Satellite*> local_sats;
 
@@ -122,7 +121,7 @@ int main(int argc, char* argv[]) {
                         if (check_state != VisibilityCalculator::State::VISIBLE) continue;
                     }
 
-                    // Recalculate state for display row (redundant but safe)
+                    // Recalculate state for display row
                     auto state_val = VisibilityCalculator::calculateState(pos, observer.getPositionECI(now), now, look.elevation);
 
                     // Async Compute Pass/Trail if missing

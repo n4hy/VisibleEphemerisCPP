@@ -19,6 +19,7 @@ namespace ve {
     <title>Visible Ephemeris Command</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/@joergdietrich/leaflet.terminator"></script>
     <style>
         body, html { margin: 0; padding: 0; height: 100%; width: 100%; background: #111; color: #ddd; font-family: 'Courier New', monospace; overflow: hidden; }
         .container { display: flex; width: 100%; height: 100%; }
@@ -27,12 +28,10 @@ namespace ve {
         .header h2 { margin: 0; color: #4da6ff; font-size: 18px; }
         #status { font-size: 11px; color: #888; margin-top: 5px; }
         
-        /* FIXED LAYOUT TABLE CSS */
         .table-wrap { flex-grow: 1; overflow-y: auto; overflow-x: auto; scrollbar-width: thin; scrollbar-color: #4da6ff #222; }
         .table-wrap::-webkit-scrollbar { width: 10px; height: 10px; }
         .table-wrap::-webkit-scrollbar-track { background: #222; }
         .table-wrap::-webkit-scrollbar-thumb { background: #444; border-radius: 4px; }
-        .table-wrap::-webkit-scrollbar-thumb:hover { background: #4da6ff; }
         table { width: 100%; min-width: 650px; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
         th { position: sticky; top: 0; background: #333; color: #fff; text-align: left; padding: 8px; border-bottom: 1px solid #555; z-index: 10; cursor: pointer; user-select: none; }
         th:hover { background: #444; }
@@ -45,9 +44,12 @@ namespace ve {
         .map-pane { flex-grow: 1; position: relative; background: #000; }
         #map, #skyplot { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
         #skyplot { display: none; background: #000; }
-        .vis-yes { color: #0f0; font-weight: bold; }
-        .vis-day { color: #ff0; }
-        .vis-no { color: #0ff; }
+        
+        .vis-yes { color: #0f0; font-weight: bold; } 
+        .vis-day { color: #ff0; } 
+        .vis-lit { color: #fa0; } 
+        .vis-no  { color: #0ff; } 
+        
         #curtain { position: absolute; top:0; left:0; width:100%; height:100%; background:black; z-index: 99999; display: flex; justify-content:center; align-items:center; color: white; }
         .view-toggle { margin-left: 10px; padding: 5px 10px; background: #333; border: 1px solid #555; color: #fff; cursor: pointer; font-family: monospace; }
         .view-toggle:hover { background: #444; }
@@ -55,7 +57,7 @@ namespace ve {
     </style>
 </head>
 <body>
-    <div id="curtain"><h1>Loading v12.64...</h1></div>
+    <div id="curtain"><h1>Loading v12.65...</h1></div>
     <div class="container">
         <div class="sidebar">
             <div class="header"><div><h2>VISIBLE EPHEMERIS</h2><div id="status">Connecting...</div></div><button class="view-toggle" onclick="toggleView()">MAP / SKY</button></div>
@@ -73,6 +75,10 @@ namespace ve {
         var map = L.map('map', {zoomControl: false}).setView([0, 0], 2);
         L.control.zoom({position: 'topright'}).addTo(map);
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: 'OpenStreetMap'}).addTo(map);
+        
+        var terminator = L.terminator({ fillOpacity: 0.5, color: '#000', fillColor: '#000', interactive: false }).addTo(map);
+        setInterval(function() { terminator.setTime(); }, 60000);
+
         var canvas = document.getElementById('skyplot'); var ctx = canvas.getContext('2d');
         function resizeCanvas() { canvas.width = canvas.parentElement.clientWidth; canvas.height = canvas.parentElement.clientHeight; }
         window.addEventListener('resize', resizeCanvas); resizeCanvas();
@@ -89,18 +95,18 @@ namespace ve {
             ctx.beginPath(); ctx.moveTo(cx, cy-r); ctx.lineTo(cx, cy+r); ctx.stroke();
             ctx.fillStyle='#00ff00'; ctx.font='16px monospace'; ctx.fillText('N',cx-5,cy-r-10); ctx.fillText('E',cx+r+10,cy+5);
             data.forEach(s => {
-                // SKYPLOT FILTER: Only show satellites above horizon (or min_el)
-                // Even in Radio Mode, skyplot usually implies "What I can see/hear now"
-                // If it's -40 deg el, it shouldn't be on the radar.
                 if(s.e < 0) return;
-
                 var dist=r*(90-s.e)/90.0; var rad=(s.a-90)*(Math.PI/180.0);
                 var x=cx+dist*Math.cos(rad); var y=cy+dist*Math.sin(rad);
                 if(s.id===selectedId) {
                     var t=Date.now(); var rad=8+4*Math.sin(t*0.005); var alp=0.3+0.2*Math.sin(t*0.005);
                     ctx.save(); ctx.beginPath(); ctx.arc(x, y, rad+5, 0, 2*Math.PI); ctx.fillStyle='rgba(255,0,255,'+alp+')'; ctx.fill(); ctx.strokeStyle='#ff00ff'; ctx.lineWidth=2; ctx.stroke(); ctx.restore();
                 }
-                ctx.fillStyle=(s.v==="YES")?"#0f0":(s.v==="DAY")?"#ff0":"#0ff";
+                
+                if (s.v==="YES") ctx.fillStyle="#0f0";
+                else if (s.v==="DAY") ctx.fillStyle="#ff0";
+                else ctx.fillStyle="#0ff"; 
+
                 ctx.beginPath(); ctx.arc(x,y,5,0,2*Math.PI); ctx.fill();
                 ctx.fillStyle='#fff'; ctx.font='12px monospace'; ctx.fillText(s.n,x+8,y+3);
             });
@@ -114,41 +120,46 @@ namespace ve {
             lastData.sort((a,b)=>{ var vA=a[sortCol], vB=b[sortCol]; if(typeof vA==='string'){vA=vA.toLowerCase();vB=vB.toLowerCase();} return (vA<vB)?(sortAsc?-1:1):(vA>vB)?(sortAsc?1:-1):0; });
             var html='';
             lastData.forEach(s=>{
-                var vis=(s.v==="YES")?"vis-yes":(s.v==="DAY")?"vis-day":"vis-no"; var act=(s.id===selectedId)?"active":"";
-                html+=`<tr class="${act}" onclick="selectSat(${s.id},${s.lat},${s.lon})"><td>${s.n}</td><td>${s.a.toFixed(1)}</td><td>${s.e.toFixed(1)}</td><td>${s.next}</td><td class="${vis}">${s.v}</td></tr>`;
+                var visClass="vis-no";
+                if(s.v==="YES") visClass="vis-yes";
+                else if(s.v==="DAY") visClass="vis-day";
+                else if(s.v==="LIT") visClass="vis-lit";
+                
+                var act=(s.id===selectedId)?"active":"";
+                html+=`<tr class="${act}" onclick="selectSat(${s.id},${s.lat},${s.lon})"><td>${s.n}</td><td>${s.a.toFixed(1)}</td><td>${s.e.toFixed(1)}</td><td>${s.next}</td><td class="${visClass}">${s.v}</td></tr>`;
             });
             document.getElementById('sat-list').innerHTML=html;
         }
         function renderMap(config) {
             if(currentView==='sky') return;
-            
-            // 1. DRAW OBSERVER HOUSE
             if (!houseMarker && config) {
                 houseMarker = L.marker([config.lat, config.lon], {
                     icon: L.divIcon({html: '🏠', className: 'house-icon', iconSize: [30,30], iconAnchor: [15,15]})
                 }).addTo(map).bindPopup("Observer Location");
             }
-
-            // 2. ROBUST ZOOM LOGIC - RETRY UNTIL SIZE IS VALID
             if (!initialZoomDone && config.max_apo > 0) {
-                if (map.getSize().x > 0) {
-                    var horizonKm = Math.sqrt(2 * 6378.0 * config.max_apo); 
-                    var degRadius = (horizonKm / 111.0) * 1.22; 
-                    map.fitBounds([
-                        [config.lat - degRadius, config.lon - degRadius],
-                        [config.lat + degRadius, config.lon + degRadius]
-                    ]);
-                    initialZoomDone = true;
-                } else {
-                    // Map container not ready, keep invalidateSize to force layout update
-                    map.invalidateSize(); 
-                }
-            }
-
+                setTimeout(function() {
+                    if (map.getSize().x > 0) {
+                        var horizonKm = Math.sqrt(2 * 6378.0 * config.max_apo); 
+                        var degRadius = (horizonKm / 111.0) * 1.22; 
+                        map.invalidateSize();
+                        map.fitBounds([[config.lat - degRadius, config.lon - degRadius],[config.lat + degRadius, config.lon + degRadius]]);
+                        initialZoomDone = true;
+                    } else { map.setView([config.lat, config.lon], 3); }
+                }, 500); 
+            } else if (!initialZoomDone) { map.setView([config.lat, config.lon], 3); }
             var currentIds=new Set();
             lastData.forEach(s=>{
                 currentIds.add(s.id);
-                var color=(s.v==="YES")?"#00ff00":(s.v==="DAY")?"#ffff00":"#00ffff";
+                
+                // EXPLICIT MAP COLOR LOGIC
+                var color="#808080"; // Default Gray
+                if(s.v==="YES") color="#00ff00";       // Visible (Green)
+                else if(s.v==="DAY") color="#ffff00";  // Daylight (Yellow)
+                else if(s.v==="LIT") color="#ffa500";  // Sunlit Below Horizon (Orange)
+                else if(s.v==="ECL") color="#00ffff";  // Eclipsed (Cyan)
+                else if(s.v==="NO") color="#0000ff";   // Eclipsed Above Horizon (Blue)
+
                 var hl=(s.id===selectedId)?"font-size:1.5em;font-weight:bold;color:#ff00ff;":"";
                 var popup=`<div style="color:black"><b>${s.n}</b><br>Az: ${s.a.toFixed(1)}&deg;<br><span style="${hl}">El: ${s.e.toFixed(1)}&deg;</span><br>Next: ${s.next}</div>`;
                 if(markers[s.id]) { markers[s.id].setLatLng([s.lat, s.lon]); if(markers[s.id].getPopup().isOpen()) markers[s.id].setPopupContent(popup); else markers[s.id].bindPopup(popup); markers[s.id].setStyle({color:color, fillColor:color}); }
@@ -158,14 +169,7 @@ namespace ve {
             for(var id in markers) if(!currentIds.has(parseInt(id))) { map.removeLayer(markers[id]); delete markers[id]; }
             for(var id in polylines) if(!currentIds.has(parseInt(id))) { map.removeLayer(polylines[id]); delete polylines[id]; }
         }
-        function updateSats() { 
-            fetch('/api/satellites?t='+Date.now()).then(r=>r.json()).then(d=>{ 
-                document.getElementById('status').innerText="Live: "+d.satellites.length; 
-                lastData=d.satellites; 
-                renderMap(d.config); 
-                renderTable(); 
-            }).catch(e=>console.error(e)); 
-        }
+        function updateSats() { fetch('/api/satellites?t='+Date.now()).then(r=>r.json()).then(d=>{ document.getElementById('status').innerText="Live: "+d.satellites.length; lastData=d.satellites; renderMap(d.config); renderTable(); }).catch(e=>console.error(e)); }
         setInterval(updateSats, 1000); updateSats(); requestAnimationFrame(animate);
     </script>
 </body>
@@ -212,14 +216,27 @@ namespace ve {
         ss << "\"satellites\":[";
         for(size_t i=0; i<rows.size(); ++i) {
             const auto& r = rows[i];
+            
+            // --- UPDATED WEB VISIBILITY LOGIC (SYNCED WITH JS) ---
+            std::string vis_str = "NO";
+            if (r.el < 0) {
+                // Below Horizon
+                if (r.state == VisibilityCalculator::State::ECLIPSED) vis_str = "ECL";
+                else vis_str = "LIT"; 
+            } else {
+                // Above Horizon
+                if (r.state == VisibilityCalculator::State::VISIBLE) vis_str = "YES";
+                else if (r.state == VisibilityCalculator::State::DAYLIGHT) vis_str = "DAY";
+                else vis_str = "NO"; 
+            }
+
             ss << "{\"id\":" << r.norad_id << ",\"n\":\"" << r.name << "\",\"lat\":" << r.lat << ",\"lon\":" << r.lon 
                << ",\"a\":" << r.az << ",\"e\":" << r.el << ",\"r\":" << r.range << ",\"apo\":" << r.apogee 
-               << ",\"v\":\"" << (r.state==VisibilityCalculator::State::VISIBLE?"YES": (r.state==VisibilityCalculator::State::DAYLIGHT?"DAY":"NO")) 
+               << ",\"v\":\"" << vis_str 
                << "\",\"next\":\"" << r.next_event << "\"";
             
             auto it = std::find_if(raw_sats.begin(), raw_sats.end(), [&](Satellite* s){ return s->getNoradId() == r.norad_id; });
             if (it != raw_sats.end()) {
-                // FIX: Use unified track API
                 const auto& trail = (*it)->getFullTrackCopy();
                 if(!trail.empty()) {
                     ss << ",\"trail\":[";
@@ -233,7 +250,7 @@ namespace ve {
             ss << "}";
             if(i < rows.size()-1) ss << ",";
         }
-        ss << "]}"; // Close satellites array and main object
+        ss << "]}"; 
         return ss.str();
     }
 

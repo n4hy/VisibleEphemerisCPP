@@ -25,6 +25,7 @@ namespace ve {
             init_pair(6, COLOR_BLACK, COLOR_WHITE); 
             init_pair(7, COLOR_WHITE, COLOR_RED); 
             init_pair(8, COLOR_RED, COLOR_WHITE); // Flash: Red/White
+            init_pair(9, COLOR_MAGENTA, COLOR_BLACK);
         }
     }
 
@@ -66,7 +67,7 @@ namespace ve {
         drawHeader(obs, t, rows.size(), total_tracked, filter_kept);
         
         std::time_t tt = Clock::to_time_t(t);
-        ss << "VISIBLE EPHEMERIS v12.64-CODE-ONLY\n";
+        ss << "VISIBLE EPHEMERIS v12.65-CODE-ONLY\n";
         ss << std::put_time(std::gmtime(&tt), "%Y-%m-%d %H:%M:%S UTC") << "\n";
         auto loc = obs.getLocation();
         ss << "OBS: " << loc.lat_deg << ", " << loc.lon_deg << " | SHOWN: " << rows.size() << "\n\n";
@@ -97,10 +98,14 @@ namespace ve {
 
         for (const auto& r : text_rows) {
             std::string state_str = "---";
-            if (r.state == VisibilityCalculator::State::VISIBLE) state_str = "VIS";
-            else if (r.state == VisibilityCalculator::State::DAYLIGHT) state_str = "DAY";
-            else if (r.state == VisibilityCalculator::State::ECLIPSED) state_str = "ECL";
-            if (r.el < 0) state_str = "HOR";
+            // LOGIC MIRROR FOR TEXT SERVER
+            if (r.el < 0) {
+                state_str = "HOR"; 
+            } else {
+                if (r.state == VisibilityCalculator::State::VISIBLE) state_str = "VIS";
+                else if (r.state == VisibilityCalculator::State::DAYLIGHT) state_str = "DAY";
+                else if (r.state == VisibilityCalculator::State::ECLIPSED) state_str = "ECL";
+            }
 
             const char* row_fmt = "%-15s %8.1f %8.1f %10.1f %8.3f %-5s %-12s";
             snprintf(buf, sizeof(buf), row_fmt, 
@@ -132,16 +137,21 @@ namespace ve {
                     move(start_y + i, 0); clrtoeol(); continue;
                 }
                 const auto& r = rows[data_idx];
-                int color = 3;
+                int color = 3; // Default Cyan (Eclipsed)
                 std::string state_str = "---";
 
+                // --- COLOR LOGIC UPDATE ---
                 if (r.el < 0) {
-                    color = 4; // RED
                     state_str = "HOR";
+                    if (r.state == VisibilityCalculator::State::ECLIPSED) {
+                        color = 4; // RED (Eclipsed & Below Horizon)
+                    } else {
+                        color = 2; // YELLOW (Sunlit & Below Horizon)
+                    }
                 } else {
-                    if (r.state == VisibilityCalculator::State::VISIBLE) { state_str = "VIS"; color=1; }
-                    else if (r.state == VisibilityCalculator::State::DAYLIGHT) { state_str = "DAY"; color=2; }
-                    else if (r.state == VisibilityCalculator::State::ECLIPSED) { state_str = "ECL"; color=3; }
+                    if (r.state == VisibilityCalculator::State::VISIBLE) { state_str = "VIS"; color=1; } // Green
+                    else if (r.state == VisibilityCalculator::State::DAYLIGHT) { state_str = "DAY"; color=2; } // Yellow
+                    else if (r.state == VisibilityCalculator::State::ECLIPSED) { state_str = "ECL"; color=3; } // Cyan
                 }
 
                 if (std::abs(r.el - min_el) < 1.0) {
@@ -190,7 +200,7 @@ namespace ve {
         
         attron(COLOR_PAIR(5));
         move(0,0);
-        printw("VISIBLE EPHEMERIS v12.64-CODE-ONLY - CONF: config.yaml");
+        printw("VISIBLE EPHEMERIS v12.65-CODE-ONLY - CONF: config.yaml");
         for(int k=getcurx(stdscr); k<COLS-30; k++) addch(' '); 
         mvprintw(0, COLS-30, "%s", time_buf);
         attroff(COLOR_PAIR(5));
@@ -203,7 +213,7 @@ namespace ve {
     void Display::drawFooter() {
         attron(COLOR_PAIR(5));
         move(LINES-1, 0);
-        printw("Controls: [UP/DOWN] Scroll  [q] Quit/Save");
+        printw("Controls: [UP/DOWN] Scroll  [q] Quit  [LastKey: %d]", last_key_debug_);
         clrtoeol();
         attroff(COLOR_PAIR(5));
     }
