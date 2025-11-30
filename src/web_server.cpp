@@ -217,7 +217,11 @@ namespace ve {
             }
             
             // --- MAP ---
-            if(!houseMarker) houseMarker = L.marker([config.lat, config.lon], {icon: L.divIcon({html:'🏠', className:'house-icon'})}).addTo(map).bindPopup("Observer");
+            if(houseMarker) {
+                houseMarker.setLatLng([config.lat, config.lon]);
+            } else {
+                houseMarker = L.marker([config.lat, config.lon], {icon: L.divIcon({html:'🏠', className:'house-icon'})}).addTo(map).bindPopup("Observer");
+            }
 
             if(!initialZoomDone && config.max_apo > 0) { map.setView([config.lat, config.lon], 3); initialZoomDone=true; }
 
