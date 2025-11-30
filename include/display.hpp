@@ -33,7 +33,7 @@ namespace ve {
         void setBlocking(bool blocking);
         
         // THREAD SAFE GETTER
-        std::string getLastFrame() const;
+        std::string getLastFrame() const; 
 
     private:
         enum class InputMode { NORMAL, CONFIRM_QUIT };

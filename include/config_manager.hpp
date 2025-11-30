@@ -13,6 +13,7 @@ namespace ve {
         int trail_length_mins = 5;
         bool show_all_visible = false;
         std::string group_selection = "active"; 
+        std::string sat_selection = ""; // NEW: Specific Satellite Names
     };
 
     class ConfigManager {

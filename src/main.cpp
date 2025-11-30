@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <atomic>
 #include <csignal>
-#include <sstream>
 #include "satellite.hpp"
 #include "observer.hpp"
 #include "visibility.hpp"
@@ -29,11 +28,11 @@ void print_help() {
               << "  --trail_mins <N> Override Trail Length (+/- minutes)\n"
               << "  --refresh        Force fresh TLE\n"
               << "  --groupsel <list> Comma-separated groups (e.g. \"amateur,weather,stations\")\n"
+              << "  --satsel <list>   Comma-separated Satellite Names (Overrules groupsel)\n"
               << "  --no-visible     Radio Mode: Show all sats > min_el (ignore light)\n"
               << "\nConfiguration is loaded from config.yaml by default.\n";
 }
 
-// --- DECOUPLED ARCHITECTURE: SHARED STATE ---
 struct SharedState {
     std::mutex mutex;
     std::vector<DisplayRow> rows;
@@ -41,90 +40,165 @@ struct SharedState {
     bool updated = false;
 };
 
+// Helper to check string containment case-insensitive
+bool hasString(const std::string& haystack, const std::string& needle) {
+    auto it = std::search(
+        haystack.begin(), haystack.end(),
+        needle.begin(), needle.end(),
+        [](char ch1, char ch2) { return std::toupper(ch1) == std::toupper(ch2); }
+    );
+    return (it != haystack.end());
+}
+
 int main(int argc, char* argv[]) {
     signal(SIGPIPE, SIG_IGN);
+    
+    // 1. IMMEDIATE HELP CHECK
+    for(int i=1; i<argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--help" || arg == "-h") {
+            print_help();
+            return 0;
+        }
+    }
     
     Logger::log("Application Starting...");
     
     ConfigManager config_mgr("config.yaml");
     AppConfig config = config_mgr.load();
-    // Default to approximate user location if zero
     if (config.lat == 0.0 && config.lon == 0.0) { config.lat = 39.5478; config.lon = -76.0916; }
 
     bool refresh_tle = false;
+    bool builder_mode = false;
 
+    // 2. Parse Arguments
     for(int i=1; i<argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "--help" || arg == "-h") { print_help(); return 0; }
+        if (arg == "--groupbuild") builder_mode = true;
+        else if (arg == "--refresh") refresh_tle = true;
         else if (arg == "--lat") { if (i+1 < argc) config.lat = std::stod(argv[++i]); }
         else if (arg == "--lon") { if (i+1 < argc) config.lon = std::stod(argv[++i]); }
+        else if (arg == "--alt") { if (i+1 < argc) config.alt = std::stod(argv[++i]); }
         else if (arg == "--max_sats") { if (i+1 < argc) config.max_sats = std::stoi(argv[++i]); }
         else if (arg == "--trail_mins") { if (i+1 < argc) config.trail_length_mins = std::stoi(argv[++i]); }
         else if (arg == "--maxapo") { if (i+1 < argc) config.max_apo = std::stod(argv[++i]); }
         else if (arg == "--minel") { if (i+1 < argc) config.min_el = std::stod(argv[++i]); }
         else if (arg == "--all") { config.show_all_visible = true; }
-        else if (arg == "--groupsel") { if (i+1 < argc) config.group_selection = argv[++i]; }
+        else if (arg == "--groupsel") { if (i+1 < argc) config.group_selection = argv[++i]; config.sat_selection = ""; } 
+        else if (arg == "--satsel") { if (i+1 < argc) config.sat_selection = argv[++i]; } 
         else if (arg == "--no-visible") { config.show_all_visible = true; } 
-        else if (arg == "--refresh") { refresh_tle = true; }
+    }
+
+    // 3. AUTO-FIX CONFIG: If asking for GPS/GEO/GNSS or Specific Sats, disable Max Apo filter
+    if (!config.sat_selection.empty() || 
+        hasString(config.group_selection, "gps") || 
+        hasString(config.group_selection, "gnss") || 
+        hasString(config.group_selection, "geo")) {
+        
+        if (config.max_apo > 0 && config.max_apo < 20000) {
+            std::cout << "[AUTO-FIX] Disabling Max Apogee filter (" << config.max_apo << "km) for High-Orbit targets.\n";
+            Logger::log("Auto-disabled Max Apogee filter");
+            config.max_apo = -1;
+        }
     }
     
     try {
-        WebServer web_server(8080);
-        TextServer text_server(12345);
-        
-        std::cout << "Loading TLEs for groups: " << config.group_selection << "..." << std::endl;
-        Logger::log("Loading TLEs for groups: " + config.group_selection);
-        
+        std::cout << "Initializing TLE Manager..." << std::endl;
         TLEManager tle_mgr("./tle_cache");
         if(refresh_tle) tle_mgr.clearCache();
+
+        // --- PHASE 1: BUILDER MODE ---
+        if (builder_mode) {
+            std::cout << "Starting Mission Planner UI on port 8080..." << std::endl;
+            WebServer builder_server(8080, tle_mgr, true);
+            builder_server.runBlocking(); 
+            std::cout << "Configuration saved. Launching Tracker..." << std::endl;
+            config = config_mgr.load(); 
+        }
         
-        std::vector<Satellite> sats = tle_mgr.loadGroups(config.group_selection);
+        // --- PHASE 2: TRACKER MODE ---
+        std::cout << "Loading TLEs..." << std::endl;
+        
+        std::vector<Satellite> sats;
+        if (!config.sat_selection.empty()) {
+             std::cout << "Loading specific satellites: " << config.sat_selection << "..." << std::endl;
+             sats = tle_mgr.loadSpecificSats(config.sat_selection);
+        } else {
+             std::cout << "Loading TLE groups: " << config.group_selection << "..." << std::endl;
+             sats = tle_mgr.loadGroups(config.group_selection);
+        }
         
         if (sats.empty()) { 
-            std::cerr << "ERROR: No satellites loaded!" << std::endl; 
+            std::cerr << "ERROR: No satellites loaded! Check network or groups." << std::endl; 
             Logger::log("ERROR: No satellites loaded");
             return 1; 
         }
         Logger::log("Loaded " + std::to_string(sats.size()) + " satellites");
 
-        Observer observer(config.lat, config.lon, config.alt);
+        WebServer web_server(8080, tle_mgr, false); 
+        TextServer text_server(12345);
         
-        // SHARED STATE FOR UI HANDOFF
+        Observer observer(config.lat, config.lon, config.alt);
+        Display display; 
+        display.setBlocking(true); 
+        
+        ThreadPool pool(4); 
+        PassPredictor predictor(observer);
+        
+        web_server.start();
+        text_server.start();
+
+        auto last_calc_time = Clock::now();
+        bool first_run = true;
         SharedState state;
         std::atomic<bool> running(true);
 
         // BACKGROUND MATH THREAD
         std::thread math_thread([&]() {
-            ThreadPool pool(4); 
-            PassPredictor predictor(observer);
-            
             while(running) {
+                // HOT RELOAD CHECK
+                if (web_server.hasPendingConfig()) {
+                    AppConfig new_cfg = web_server.popPendingConfig();
+                    if (new_cfg.group_selection != config.group_selection) {
+                         Logger::log("Hot Reload: Switching groups to " + new_cfg.group_selection);
+                         sats = tle_mgr.loadGroups(new_cfg.group_selection);
+                    }
+                    config = new_cfg;
+                    observer = Observer(config.lat, config.lon, config.alt); 
+                }
+
                 auto now = Clock::now();
                 std::vector<DisplayRow> local_rows;
                 std::vector<Satellite*> local_sats;
+                
+                int rejected_apo = 0;
+                int rejected_el = 0;
+                int rejected_vis = 0;
 
                 for(auto& sat : sats) {
                     if(!running) break;
-                    if (config.max_apo > 0 && sat.getApogeeKm() > config.max_apo) continue;
+                    
+                    // FILTER 1: APOGEE
+                    if (config.max_apo > 0 && sat.getApogeeKm() > config.max_apo) {
+                        rejected_apo++;
+                        continue;
+                    }
 
                     auto [pos, vel] = sat.propagate(now);
                     auto look = observer.calculateLookAngle(pos, now);
                     double rrate = observer.calculateRangeRate(pos, vel, now);
 
-                    // LOGIC: Filter based on visibility settings
                     if (config.show_all_visible) {
-                        // Radio mode: Add everything above horizon (handled by min_el usually, or just add)
+                        // Radio Mode: Show all
                     } else {
-                        // Optical Mode: Must meet El AND be optically visible
-                        if (look.elevation < config.min_el) continue;
-                        auto check_state = VisibilityCalculator::calculateState(pos, observer.getPositionECI(now), now, look.elevation);
-                        if (check_state != VisibilityCalculator::State::VISIBLE) continue;
+                        // Optical Mode:
+                        if (look.elevation < config.min_el) { rejected_el++; continue; }
+                        auto state = VisibilityCalculator::calculateState(pos, observer.getPositionECI(now), now, look.elevation);
+                        if (state != VisibilityCalculator::State::VISIBLE) { rejected_vis++; continue; }
                     }
 
-                    // Recalculate state for display row
-                    auto state_val = VisibilityCalculator::calculateState(pos, observer.getPositionECI(now), now, look.elevation);
+                    auto state = VisibilityCalculator::calculateState(pos, observer.getPositionECI(now), now, look.elevation);
 
-                    // Async Compute Pass/Trail if missing
                     bool needs_update = sat.getPredictedPasses().empty() || sat.getFullTrackCopy().empty();
                     if (needs_update && !sat.is_computing.exchange(true)) {
                         pool.enqueue([&sat, &predictor, now, config]() {
@@ -148,20 +222,27 @@ int main(int argc, char* argv[]) {
                              }
                         }
                         
-                        auto geo = sat.getGeodetic(now);
-                        
-                        // FIX: Ensure we use the variables declared at top of loop (local_rows, local_sats)
-                        local_rows.push_back({sat.getName(), look.azimuth, look.elevation, look.range, rrate, geo.lat_deg, geo.lon_deg, sat.getApogeeKm(), state_val, sat.getNoradId(), next_event_str});
-                        local_sats.push_back(&sat);
+                    auto geo = sat.getGeodetic(now);
+                    local_rows.push_back({sat.getName(), look.azimuth, look.elevation, look.range, rrate, geo.lat_deg, geo.lon_deg, sat.getApogeeKm(), state, sat.getNoradId(), next_event_str});
+                    local_sats.push_back(&sat);
                 }
+                
+                // DIAGNOSTICS: If empty list, report why
+                if(local_rows.empty() && !sats.empty()) {
+                     // Only log periodically to avoid spam, or handle in UI
+                     // For now, we rely on console output from main
+                }
+                
+                if (!running) break;
 
-                // Sort by Elevation (Descending)
                 std::sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
                 
-                // Crop to max_sats
-                if (local_rows.size() > (size_t)config.max_sats) local_rows.resize(config.max_sats);
+                if (!config.show_all_visible) {
+                    if (local_rows.size() > (size_t)config.max_sats) local_rows.resize(config.max_sats);
+                } else {
+                    if (local_rows.size() > 5000) local_rows.resize(5000);
+                }
 
-                // PUSH TO SHARED STATE
                 {
                     std::lock_guard<std::mutex> lock(state.mutex);
                     state.rows = local_rows;
@@ -169,23 +250,17 @@ int main(int argc, char* argv[]) {
                     state.updated = true;
                 }
                 
-                // Throttle Math Loop (50ms)
                 for(int i=0; i<20; ++i) { if(!running) break; std::this_thread::sleep_for(std::chrono::milliseconds(50)); }
             }
         });
 
-        // UI THREAD (MAIN)
-        Display display; 
-        web_server.start();
-        text_server.start();
-        Logger::log("UI Loop Started");
-
+        // MAIN UI LOOP
         while (true) {
-            auto input = display.handleInput();
-            if (input == Display::InputResult::SAVE_AND_QUIT) { config_mgr.save(config); running=false; break; }
-            else if (input == Display::InputResult::QUIT_NO_SAVE) { running=false; break; }
+            display.setBlocking(true);
+            auto input_res = display.handleInput();
+            if (input_res == Display::InputResult::SAVE_AND_QUIT) { config_mgr.save(config); running=false; break; }
+            else if (input_res == Display::InputResult::QUIT_NO_SAVE) { running=false; break; }
 
-            // Check for new data
             std::vector<DisplayRow> current_rows;
             {
                 std::lock_guard<std::mutex> lock(state.mutex);
@@ -193,19 +268,17 @@ int main(int argc, char* argv[]) {
                     current_rows = state.rows;
                     web_server.updateData(state.rows, state.active_sats, config);
                 } else {
-                    current_rows = state.rows; // Use last known good frame
+                    current_rows = state.rows; 
                 }
             }
             
             display.update(current_rows, observer, Clock::now(), sats.size(), current_rows.size(), config.show_all_visible, config.min_el);
-            text_server.updateData(display.getLastFrame());
-            
-            std::this_thread::sleep_for(std::chrono::milliseconds(50)); // 20FPS UI
+            text_server.updateData(display.getLastFrame()); 
         }
 
-        if(math_thread.joinable()) math_thread.join();
         web_server.stop();
         text_server.stop();
+        if(math_thread.joinable()) math_thread.join();
         Logger::log("Shutdown Complete");
 
     } catch (const std::exception& e) {

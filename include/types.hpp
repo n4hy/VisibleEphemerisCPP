@@ -39,4 +39,17 @@ namespace ve {
         double fraction = (gmt->tm_hour + gmt->tm_min/60.0 + gmt->tm_sec/3600.0) / 24.0;
         return jd + fraction;
     }
+
+    // Helper to get GMST for coordinate transforms
+    inline double getGMST(const TimePoint& t) {
+        double jd = toJulianDate(t);
+        double jd_midnight = std::floor(jd - 0.5) + 0.5;
+        double T = (jd_midnight - 2451545.0) / 36525.0;
+        double gmst_0h = 24110.54841 + 8640184.812866 * T + 0.093104 * T * T - 6.2e-6 * T * T * T;
+        double ut_hours = (jd - jd_midnight) * 24.0;
+        double gmst_now_sec = gmst_0h + (ut_hours * 3600.0 * 1.00273790935);
+        gmst_now_sec = std::fmod(gmst_now_sec, 86400.0);
+        if (gmst_now_sec < 0) gmst_now_sec += 86400.0;
+        return (gmst_now_sec / 240.0) * DEG2RAD;
+    }
 }

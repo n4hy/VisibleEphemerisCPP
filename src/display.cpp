@@ -25,7 +25,6 @@ namespace ve {
             init_pair(6, COLOR_BLACK, COLOR_WHITE); 
             init_pair(7, COLOR_WHITE, COLOR_RED); 
             init_pair(8, COLOR_RED, COLOR_WHITE); // Flash: Red/White
-            init_pair(9, COLOR_MAGENTA, COLOR_BLACK);
         }
     }
 
@@ -98,14 +97,10 @@ namespace ve {
 
         for (const auto& r : text_rows) {
             std::string state_str = "---";
-            // LOGIC MIRROR FOR TEXT SERVER
-            if (r.el < 0) {
-                state_str = "HOR"; 
-            } else {
-                if (r.state == VisibilityCalculator::State::VISIBLE) state_str = "VIS";
-                else if (r.state == VisibilityCalculator::State::DAYLIGHT) state_str = "DAY";
-                else if (r.state == VisibilityCalculator::State::ECLIPSED) state_str = "ECL";
-            }
+            if (r.state == VisibilityCalculator::State::VISIBLE) state_str = "VIS";
+            else if (r.state == VisibilityCalculator::State::DAYLIGHT) state_str = "DAY";
+            else if (r.state == VisibilityCalculator::State::ECLIPSED) state_str = "ECL";
+            if (r.el < 0) state_str = "HOR";
 
             const char* row_fmt = "%-15s %8.1f %8.1f %10.1f %8.3f %-5s %-12s";
             snprintf(buf, sizeof(buf), row_fmt, 
@@ -137,21 +132,16 @@ namespace ve {
                     move(start_y + i, 0); clrtoeol(); continue;
                 }
                 const auto& r = rows[data_idx];
-                int color = 3; // Default Cyan (Eclipsed)
+                int color = 3;
                 std::string state_str = "---";
 
-                // --- COLOR LOGIC UPDATE ---
                 if (r.el < 0) {
+                    color = 4; // RED
                     state_str = "HOR";
-                    if (r.state == VisibilityCalculator::State::ECLIPSED) {
-                        color = 4; // RED (Eclipsed & Below Horizon)
-                    } else {
-                        color = 2; // YELLOW (Sunlit & Below Horizon)
-                    }
                 } else {
-                    if (r.state == VisibilityCalculator::State::VISIBLE) { state_str = "VIS"; color=1; } // Green
-                    else if (r.state == VisibilityCalculator::State::DAYLIGHT) { state_str = "DAY"; color=2; } // Yellow
-                    else if (r.state == VisibilityCalculator::State::ECLIPSED) { state_str = "ECL"; color=3; } // Cyan
+                    if (r.state == VisibilityCalculator::State::VISIBLE) { state_str = "VIS"; color=1; }
+                    else if (r.state == VisibilityCalculator::State::DAYLIGHT) { state_str = "DAY"; color=2; }
+                    else if (r.state == VisibilityCalculator::State::ECLIPSED) { state_str = "ECL"; color=3; }
                 }
 
                 if (std::abs(r.el - min_el) < 1.0) {
