@@ -15,6 +15,7 @@
 #include "pass_predictor.hpp"
 #include "thread_pool.hpp"
 #include "logger.hpp"
+#include "rotator.hpp"
 
 using namespace ve;
 
@@ -145,6 +146,11 @@ int main(int argc, char* argv[]) {
         ThreadPool pool(4); 
         PassPredictor predictor(observer);
         
+        std::unique_ptr<Rotator> rotator;
+        if (config.rotator_enabled) {
+            rotator = std::make_unique<Rotator>(config.rotator_host, config.rotator_port);
+        }
+        
         web_server.start();
         text_server.start();
 
@@ -175,6 +181,8 @@ int main(int argc, char* argv[]) {
                 int rejected_el = 0;
                 int rejected_vis = 0;
 
+                int selected_norad_id = web_server.getSelectedNoradId();
+
                 for(auto& sat : sats) {
                     if(!running) break;
                     
@@ -187,6 +195,13 @@ int main(int argc, char* argv[]) {
                     auto [pos, vel] = sat.propagate(now);
                     auto look = observer.calculateLookAngle(pos, now);
                     double rrate = observer.calculateRangeRate(pos, vel, now);
+
+                    // ROTATOR LOGIC
+                    if (rotator && rotator->isConnected() && sat.getNoradId() == selected_norad_id) {
+                        if (look.elevation >= config.rotator_min_el) {
+                            rotator->setPosition(look.azimuth, look.elevation);
+                        }
+                    }
 
                     if (config.show_all_visible) {
                         // Radio Mode: Show all

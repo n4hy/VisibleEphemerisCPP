@@ -26,12 +26,15 @@ namespace ve {
         bool hasPendingConfig();
         AppConfig popPendingConfig();
 
+        int getSelectedNoradId() const;
+
     private:
         int port_;
         int server_fd_;
         bool builder_mode_;
         std::atomic<bool> running_;
         std::thread server_thread_;
+        std::atomic<int> selected_norad_id_{0};
         
         std::mutex data_mutex_;
         std::string current_json_data_;

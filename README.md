@@ -42,7 +42,7 @@ Visible Ephemeris requires a C++17 compiler, CMake, and the following libraries:
 **On Raspberry Pi / Debian:**
 ```bash
 sudo apt update
-sudo apt install build-essential cmake libncurses-dev libcurl4-openssl-dev
+sudo apt install build-essential cmake libncurses-dev libcurl4-openssl-dev libhamlib-dev
 ```
 
 ### 2. Install libsgp4 (Required)

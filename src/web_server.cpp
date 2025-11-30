@@ -172,6 +172,7 @@ namespace ve {
         
         function selectSat(id) { 
             selectedId = id; 
+            fetch('/api/select/' + id);
             if(currentView==='map') { 
                 var s = lastData.find(x => x.id === id);
                 if(s) map.panTo([s.lat, s.lon]); 
@@ -313,6 +314,10 @@ namespace ve {
     bool WebServer::hasPendingConfig() { std::lock_guard<std::mutex> lock(config_mutex_); return config_changed_; }
     AppConfig WebServer::popPendingConfig() { std::lock_guard<std::mutex> lock(config_mutex_); config_changed_ = false; return pending_config_; }
 
+    int WebServer::getSelectedNoradId() const {
+        return selected_norad_id_.load();
+    }
+
     std::string WebServer::buildJson(const std::vector<DisplayRow>& rows, const std::vector<Satellite*>& raw_sats, const AppConfig& config) {
         std::stringstream ss;
         Geodetic sun = VisibilityCalculator::getSunPositionGeo(Clock::now());
@@ -358,6 +363,19 @@ namespace ve {
             std::lock_guard<std::mutex> lock(data_mutex_);
             std::string resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-cache, no-store\r\nContent-Length: " + std::to_string(current_json_data_.length()) + "\r\n\r\n" + current_json_data_;
             send(client_socket, resp.c_str(), resp.length(), MSG_NOSIGNAL);
+        } else if (clean_path.rfind("/api/select/", 0) == 0) {
+            try {
+                std::string id_str = clean_path.substr(12);
+                int norad_id = std::stoi(id_str);
+                selected_norad_id_ = norad_id;
+                std::string body = "{\"status\":\"ok\"}";
+                std::string header = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: " + std::to_string(body.length()) + "\r\n\r\n";
+                sendAll(client_socket, header, body);
+            } catch (...) {
+                std::string body = "{\"status\":\"error\", \"message\":\"Invalid NORAD ID\"}";
+                std::string header = "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: " + std::to_string(body.length()) + "\r\n\r\n";
+                sendAll(client_socket, header, body);
+            }
         } else {
             std::string body = DASHBOARD_HTML;
             std::string resp = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nCache-Control: no-cache, no-store\r\nContent-Length: " + std::to_string(body.length()) + "\r\n\r\n" + body;

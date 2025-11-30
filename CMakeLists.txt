@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(CURL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Curses REQUIRED) 
+find_package(hamlib REQUIRED)
 
 set(USER_HOME $ENV{HOME})
 set(PATHS_TO_CHECK "${USER_HOME}/sgp4/build/install" "/usr/local" "/usr")
@@ -43,10 +44,11 @@ set(SOURCES
     src/text_server.cpp
     src/config_manager.cpp
     src/logger.cpp
+    src/rotator.cpp
 )
 
 include_directories(include)
 include_directories(${SGP4_INCLUDE_DIR})
 
 add_executable(VisibleEphemeris ${SOURCES})
-target_link_libraries(VisibleEphemeris PRIVATE ${SGP4_LIB} CURL::libcurl Threads::Threads ${CURSES_LIBRARIES})
+target_link_libraries(VisibleEphemeris PRIVATE ${SGP4_LIB} CURL::libcurl Threads::Threads ${CURSES_LIBRARIES} hamlib)

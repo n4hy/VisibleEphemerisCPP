@@ -65,6 +65,12 @@ namespace ve {
             
             if (data.count("sat_selection")) cfg.sat_selection = data["sat_selection"];
             if (data.count("show_all_visible")) cfg.show_all_visible = (data["show_all_visible"] == "true" || data["show_all_visible"] == "1");
+
+            // Rotator Settings
+            if (data.count("rotator_enabled")) cfg.rotator_enabled = (data["rotator_enabled"] == "true" || data["rotator_enabled"] == "1");
+            if (data.count("rotator_host")) cfg.rotator_host = data["rotator_host"];
+            if (data.count("rotator_port")) cfg.rotator_port = std::stoi(data["rotator_port"]);
+            if (data.count("rotator_min_el")) cfg.rotator_min_el = std::stod(data["rotator_min_el"]);
         } catch(...) {
             std::cerr << "[CONFIG] Error parsing config.yaml" << std::endl;
         }
@@ -83,6 +89,13 @@ namespace ve {
         file << "group_selection: " << config.group_selection << "\n";
         file << "sat_selection: " << config.sat_selection << "\n";
         file << "show_all_visible: " << (config.show_all_visible ? "true" : "false") << "\n";
+
+        // Rotator Settings
+        file << "rotator_enabled: " << (config.rotator_enabled ? "true" : "false") << "\n";
+        file << "rotator_host: " << config.rotator_host << "\n";
+        file << "rotator_port: " << config.rotator_port << "\n";
+        file << "rotator_min_el: " << config.rotator_min_el << "\n";
+
         file.close();
     }
 }
