@@ -21,6 +21,5 @@ namespace ve {
         int port_;
         ROT* rot_{nullptr};
         bool connected_{false};
-        Logger logger_{"Rotator"};
     };
 }
