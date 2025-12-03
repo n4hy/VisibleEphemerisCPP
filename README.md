@@ -1,5 +1,10 @@
 # Visible Ephemeris
-### High-Performance Satellite Tracking Appliance (C++17)
+
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![C++17](https://img.shields.io/badge/C++-17-blue.svg)
+![Platform: Raspberry Pi](https://img.shields.io/badge/Platform-Raspberry%20Pi-red.svg)
+
+### High-Performance Satellite Tracking Appliance
 
 **Visible Ephemeris** is a modern, spiritual successor to *Quiktrak* (1986), re-engineered for the Raspberry Pi 5 and modern silicon. It is capable of propagating 13,000+ satellites in real-time with sub-second updates while maintaining <5% CPU utilization.
 
@@ -34,6 +39,23 @@ It features a **Hybrid Decoupled Architecture** where the UI, Orbital Mechanics,
 
 ---
 
+## 🏛️ Architecture
+
+Visible Ephemeris employs a **Hybrid Decoupled Architecture** to ensure responsiveness and performance.
+
+* **Main Thread (UI)**: Handles `ncurses` display updates and user input. It never performs heavy calculations.
+* **Math Thread (Background)**:
+    * Continuously propagates satellite orbits using SGP4/SDP4.
+    * Calculates look angles (Azimuth, Elevation) and visibility (Optical/Radio).
+    * Updates a shared state protected by mutexes.
+    * Uses a `ThreadPool` for parallelizing prediction tasks (AOS/LOS times).
+* **Network Services**:
+    * **Web Server (Port 8080)**: Serves the JSON API and the HTML dashboard.
+    * **Text Server (Port 12345)**: Serves a raw text mirror of the terminal output.
+* **TLE Manager**: Handles downloading, caching, and parsing of Two-Line Element sets from Celestrak.
+
+---
+
 ## 🛠️ Installation
 
 ### 1. Dependencies
@@ -50,7 +72,7 @@ This library provides the SGP4/SDP4 orbital mathematics. You must install it fro
 
 ```bash
 cd ~
-git clone [https://github.com/dnwrnr/sgp4.git](https://github.com/dnwrnr/sgp4.git)
+git clone https://github.com/dnwrnr/sgp4.git
 cd sgp4
 mkdir build && cd build
 cmake ..
@@ -143,6 +165,31 @@ Visible Ephemeris acts as a web appliance, exposing two ports:
 sudo ufw allow 8080
 sudo ufw allow 12345
 ```
+
+---
+
+## ❓ Troubleshooting
+
+### Common Issues
+
+**1. "Could not find libsgp4s.so"**
+   - Ensure you have installed `libsgp4` as described in the Installation section.
+   - Run `sudo ldconfig` to update the shared library cache.
+
+**2. "No satellites loaded!"**
+   - Check your internet connection.
+   - Ensure you can access `celestrak.org`.
+   - Verify your group selection (e.g., `--groupsel active`).
+   - Try running with `--refresh` to force a TLE download.
+
+**3. "Address already in use"**
+   - Another instance of Visible Ephemeris might be running. Use `ps aux | grep VisibleEphemeris` to check and `kill` to terminate it.
+   - Ports 8080 or 12345 might be used by another application.
+
+**4. Rotator not moving**
+   - Ensure `hamlib` is installed and the rotator daemon (`rotctld`) is running if needed.
+   - Check the `config.yaml` for correct rotator host and port.
+   - Verify the satellite is selected in the Web UI.
 
 ---
 
