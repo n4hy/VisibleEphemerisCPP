@@ -71,6 +71,11 @@ namespace ve {
             if (data.count("rotator_host")) cfg.rotator_host = data["rotator_host"];
             if (data.count("rotator_port")) cfg.rotator_port = std::stoi(data["rotator_port"]);
             if (data.count("rotator_min_el")) cfg.rotator_min_el = std::stod(data["rotator_min_el"]);
+
+            // Rig Settings
+            if (data.count("rig_enabled")) cfg.rig_enabled = (data["rig_enabled"] == "true" || data["rig_enabled"] == "1");
+            if (data.count("rig_host")) cfg.rig_host = data["rig_host"];
+            if (data.count("rig_port")) cfg.rig_port = std::stoi(data["rig_port"]);
         } catch(...) {
             std::cerr << "[CONFIG] Error parsing config.yaml" << std::endl;
         }
@@ -95,6 +100,11 @@ namespace ve {
         file << "rotator_host: " << config.rotator_host << "\n";
         file << "rotator_port: " << config.rotator_port << "\n";
         file << "rotator_min_el: " << config.rotator_min_el << "\n";
+
+        // Rig Settings
+        file << "rig_enabled: " << (config.rig_enabled ? "true" : "false") << "\n";
+        file << "rig_host: " << config.rig_host << "\n";
+        file << "rig_port: " << config.rig_port << "\n";
 
         file.close();
     }
