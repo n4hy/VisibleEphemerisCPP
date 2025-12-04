@@ -20,6 +20,11 @@ namespace ve {
         std::string rotator_host = "localhost";
         int rotator_port = 4533;
         double rotator_min_el = 0.0;
+
+        // Rig Settings
+        bool rig_enabled = false;
+        std::string rig_host = "localhost";
+        int rig_port = 4532;
     };
 
     class ConfigManager {
