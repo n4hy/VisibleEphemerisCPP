@@ -94,18 +94,34 @@ namespace ve {
         std::vector<Satellite> sats; 
         std::ifstream file(filepath); 
         std::string line, name, l1, l2;
-        if (!file.is_open()) return sats;
+        if (!file.is_open()) {
+            Logger::log("Failed to open TLE file: " + filepath);
+            return sats;
+        }
+        int line_num = 0;
         while (std::getline(file, line)) {
+            line_num++;
             line = trim(line); if (line.length() < 2) continue;
             if (line.substr(0, 2) == "1 " && !name.empty()) {
                 l1 = line;
                 if (std::getline(file, l2)) {
+                    line_num++;
                     l2 = trim(l2);
                     if (l2.substr(0, 2) == "2 ") {
                         name.erase(name.find_last_not_of(" \n\r\t")+1);
-                        try { sats.emplace_back(name, l1, l2); } catch(...) {}
+                        try {
+                            sats.emplace_back(name, l1, l2);
+                        } catch(const std::exception& e) {
+                             Logger::log("Error parsing satellite " + name + " in " + filepath + " at line " + std::to_string(line_num) + ": " + e.what());
+                        } catch(...) {
+                             Logger::log("Unknown error parsing satellite " + name + " in " + filepath + " at line " + std::to_string(line_num));
+                        }
                         name = "";
+                    } else {
+                        Logger::log("Malformed TLE at line " + std::to_string(line_num) + " in " + filepath + ": expected line 2");
                     }
+                } else {
+                     Logger::log("Unexpected end of file while reading TLE in " + filepath);
                 }
             } else { name = line; }
         }
@@ -114,22 +130,25 @@ namespace ve {
 
     std::string TLEManager::getUrlForGroup(const std::string& group) {
         std::string g = trim(group);
-        std::string base = "https://celestrak.org/NORAD/elements/gp.php?GROUP=";
-        std::string suffix = "&FORMAT=tle";
+        static const std::set<std::string> valid_groups = {
+            // Special
+            "active", "visual", "stations", "last-30-days", "analyst",
+            // Weather
+            "weather", "noaa", "goes", "resource", "sarsat", "dmc", "tdrss", "argos", "planet", "spire",
+            // Comm
+            "geo", "intelsat", "ses", "iridium", "iridium-NEXT", "starlink", "oneweb", "orbcomm",
+            "globalstar", "swpc", "amateur", "x-comm", "other-comm", "satnogs", "gorizont", "raduga", "molniya",
+            // Nav
+            "gnss", "gps-ops", "glo-ops", "galileo", "beidou", "sbas", "nnss", "musson",
+            // Science
+            "science", "geodetic", "engineering", "education",
+            // Misc
+            "military", "radar", "cubesat", "other"
+        };
 
-        // --- MAPPING LOGIC ---
-        // Special
-        if (g == "active" || g == "visual" || g == "stations" || g == "last-30-days" || g == "analyst") return base + g + suffix;
-        // Weather
-        if (g == "weather" || g == "noaa" || g == "goes" || g == "resource" || g == "sarsat" || g == "dmc" || g == "tdrss" || g == "argos" || g == "planet" || g == "spire") return base + g + suffix;
-        // Comm
-        if (g == "geo" || g == "intelsat" || g == "ses" || g == "iridium" || g == "iridium-NEXT" || g == "starlink" || g == "oneweb" || g == "orbcomm" || g == "globalstar" || g == "swpc" || g == "amateur" || g == "x-comm" || g == "other-comm" || g == "satnogs" || g == "gorizont" || g == "raduga" || g == "molniya") return base + g + suffix;
-        // Nav
-        if (g == "gnss" || g == "gps-ops" || g == "glo-ops" || g == "galileo" || g == "beidou" || g == "sbas" || g == "nnss" || g == "musson") return base + g + suffix;
-        // Science
-        if (g == "science" || g == "geodetic" || g == "engineering" || g == "education") return base + g + suffix;
-        // Misc
-        if (g == "military" || g == "radar" || g == "cubesat" || g == "other") return base + g + suffix;
+        if (valid_groups.find(g) != valid_groups.end()) {
+            return "https://celestrak.org/NORAD/elements/gp.php?GROUP=" + g + "&FORMAT=tle";
+        }
 
         // IF WE REACH HERE, IT IS UNKNOWN
         std::cerr << "[ERROR] Unknown Group Name: [" << g << "]" << std::endl;
