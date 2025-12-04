@@ -89,9 +89,12 @@ namespace ve {
         snprintf(buf, sizeof(buf), hdr_fmt, "NAME", "AZ", "EL", "RANGE", "RR(km/s)", "VIS", "NEXT EVENT");
         ss << buf << "\n-------------------------------------------------------------------------\n";
 
-        // --- TEXT BUFFER GENERATION (SORTED BY NAME) ---
+        // --- TEXT BUFFER GENERATION (SORTED BY VISIBILITY THEN NAME) ---
         std::vector<DisplayRow> text_rows = rows;
         std::sort(text_rows.begin(), text_rows.end(), [](const DisplayRow& a, const DisplayRow& b) {
+            bool a_vis = (a.el >= 0.0);
+            bool b_vis = (b.el >= 0.0);
+            if (a_vis != b_vis) return a_vis > b_vis;
             return a.name < b.name;
         });
 
