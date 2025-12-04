@@ -46,6 +46,8 @@ set(SOURCES
     src/config_manager.cpp
     src/logger.cpp
     src/rotator.cpp
+    src/rig_control.cpp
+    src/frequency_manager.cpp
 )
 
 include_directories(include)

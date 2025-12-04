@@ -210,8 +210,17 @@ namespace ve {
                         ctx.save(); ctx.beginPath(); ctx.arc(x, y, pr, 0, 2*Math.PI); 
                         ctx.strokeStyle='#ff00ff'; ctx.lineWidth=2; ctx.stroke(); ctx.restore();
                     }
-                    var col = (s.v==="YES") ? "#0f0" : ((s.v==="DAY")?"#ff0":"#0ff");
-                    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x,y,5,0,2*Math.PI); ctx.fill();
+
+                    if (s.id === -1) { // SUN
+                        ctx.fillStyle = '#FFFF00';
+                        ctx.beginPath(); ctx.arc(x, y, 8, 0, 2*Math.PI); ctx.fill();
+                    } else if (s.id === -2) { // MOON
+                        ctx.fillStyle = '#AAAAAA';
+                        ctx.beginPath(); ctx.arc(x, y, 6, 0, 2*Math.PI); ctx.fill();
+                    } else {
+                        var col = (s.v==="YES") ? "#0f0" : ((s.v==="DAY")?"#ff0":"#0ff");
+                        ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x,y,5,0,2*Math.PI); ctx.fill();
+                    }
                     ctx.fillStyle='#fff'; ctx.fillText(s.n, x+8, y+3);
                 });
                 return;
