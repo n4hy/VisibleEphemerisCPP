@@ -16,6 +16,8 @@
 #include "thread_pool.hpp"
 #include "logger.hpp"
 #include "rotator.hpp"
+#include "rig_control.hpp"
+#include "frequency_manager.hpp"
 
 using namespace ve;
 
@@ -25,12 +27,19 @@ void print_help() {
               << "  --help, -h       Show help\n"
               << "  --lat <deg>      Override Latitude\n"
               << "  --lon <deg>      Override Longitude\n"
+              << "  --alt <km>       Override Altitude\n"
               << "  --max_sats <N>   Override Max Satellites\n"
+              << "  --maxapo <km>    Filter satellites by max apogee\n"
+              << "  --minel <deg>    Filter satellites by minimum elevation\n"
               << "  --trail_mins <N> Override Trail Length (+/- minutes)\n"
               << "  --refresh        Force fresh TLE\n"
               << "  --groupsel <list> Comma-separated groups (e.g. \"amateur,weather,stations\")\n"
               << "  --satsel <list>   Comma-separated Satellite Names (Overrules groupsel)\n"
               << "  --no-visible     Radio Mode: Show all sats > min_el (ignore light)\n"
+              << "  --all            Same as --no-visible\n"
+              << "  --rigctl <en,port,host>        Configure Rig Control (e.g. T,4532,localhost)\n"
+              << "  --rotctl <en,port,host,min_el> Configure Rotator Control (e.g. T,4533,localhost,0.0)\n"
+              << "  --groupbuild     Launch Builder Mode (Web UI)\n"
               << "\nConfiguration is loaded from config.yaml by default.\n";
 }
 
@@ -49,6 +58,16 @@ bool hasString(const std::string& haystack, const std::string& needle) {
         [](char ch1, char ch2) { return std::toupper(ch1) == std::toupper(ch2); }
     );
     return (it != haystack.end());
+}
+
+std::vector<std::string> split(const std::string& s, char delimiter) {
+    std::vector<std::string> tokens;
+    std::string token;
+    std::istringstream tokenStream(s);
+    while (std::getline(tokenStream, token, delimiter)) {
+        tokens.push_back(token);
+    }
+    return tokens;
 }
 
 int main(int argc, char* argv[]) {
@@ -88,6 +107,29 @@ int main(int argc, char* argv[]) {
         else if (arg == "--groupsel") { if (i+1 < argc) config.group_selection = argv[++i]; config.sat_selection = ""; } 
         else if (arg == "--satsel") { if (i+1 < argc) config.sat_selection = argv[++i]; } 
         else if (arg == "--no-visible") { config.show_all_visible = true; } 
+        else if (arg == "--rigctl") {
+            if (i+1 < argc) {
+                auto tokens = split(argv[++i], ',');
+                if (tokens.size() >= 3) {
+                    config.rig_enabled = (tokens[0] == "T" || tokens[0] == "true");
+                    try { config.rig_port = std::stoi(tokens[1]); } catch(...) {}
+                    config.rig_host = tokens[2];
+                }
+            }
+        }
+        else if (arg == "--rotctl") {
+            if (i+1 < argc) {
+                auto tokens = split(argv[++i], ',');
+                if (tokens.size() >= 3) {
+                    config.rotator_enabled = (tokens[0] == "T" || tokens[0] == "true");
+                    try { config.rotator_port = std::stoi(tokens[1]); } catch(...) {}
+                    config.rotator_host = tokens[2];
+                    if (tokens.size() >= 4) {
+                        try { config.rotator_min_el = std::stod(tokens[3]); } catch(...) {}
+                    }
+                }
+            }
+        }
     }
 
     // 3. AUTO-FIX CONFIG: If asking for GPS/GEO/GNSS or Specific Sats, disable Max Apo filter
@@ -101,6 +143,21 @@ int main(int argc, char* argv[]) {
             Logger::log("Auto-disabled Max Apogee filter");
             config.max_apo = -1;
         }
+    }
+
+    bool track_sun = false;
+    bool track_moon = false;
+
+    // Check if Sun/Moon are requested via selection
+    if (!config.sat_selection.empty()) {
+        if (hasString(config.sat_selection, "sun")) track_sun = true;
+        if (hasString(config.sat_selection, "moon")) track_moon = true;
+    }
+
+    // Check if Sun/Moon are requested via group "sunmoon"
+    if (hasString(config.group_selection, "sunmoon")) {
+        track_sun = true;
+        track_moon = true;
     }
     
     try {
@@ -129,7 +186,7 @@ int main(int argc, char* argv[]) {
              sats = tle_mgr.loadGroups(config.group_selection);
         }
         
-        if (sats.empty()) { 
+        if (sats.empty() && !track_sun && !track_moon) {
             std::cerr << "ERROR: No satellites loaded! Check network or groups." << std::endl; 
             Logger::log("ERROR: No satellites loaded");
             return 1; 
@@ -149,6 +206,20 @@ int main(int argc, char* argv[]) {
         std::unique_ptr<Rotator> rotator;
         if (config.rotator_enabled) {
             rotator = std::make_unique<Rotator>(config.rotator_host, config.rotator_port);
+        }
+
+        std::unique_ptr<RigControl> rig_ctl;
+        std::unique_ptr<FrequencyManager> freq_mgr;
+        if (config.rig_enabled) {
+            std::cout << "[RIG] Enabling Rig Control (" << config.rig_host << ":" << config.rig_port << ")" << std::endl;
+            rig_ctl = std::make_unique<RigControl>(config.rig_host, config.rig_port);
+            std::cout << "[RIG] Initializing Frequency Manager..." << std::endl;
+            freq_mgr = std::make_unique<FrequencyManager>("satnogs.json");
+            if(freq_mgr->updateDatabase()) {
+                std::cout << "[RIG] SatNOGS Database updated successfully." << std::endl;
+            } else {
+                std::cout << "[RIG] Using cached SatNOGS Database." << std::endl;
+            }
         }
         
         web_server.start();
@@ -183,6 +254,29 @@ int main(int argc, char* argv[]) {
 
                 int selected_norad_id = web_server.getSelectedNoradId();
 
+                // --- SUN & MOON ---
+                {
+                    // SUN (ID: -1)
+                    {
+                        Vector3 sun_eci = VisibilityCalculator::getSunPositionECI(now);
+                        auto sun_look = observer.calculateLookAngle(sun_eci, now);
+                        Geodetic sun_geo = VisibilityCalculator::getSunPositionGeo(now);
+                        // Sun is always "Visible" (or Daylight) unless eclipsed (Eclipse of sun?) - Simplification: State is VISIBLE if el > 0
+                        VisibilityCalculator::State sun_state = (sun_look.elevation > 0) ? VisibilityCalculator::State::DAYLIGHT : VisibilityCalculator::State::VISIBLE;
+                        local_rows.push_back({"SUN", sun_look.azimuth, sun_look.elevation, sun_look.range, 0.0, sun_geo.lat_deg, sun_geo.lon_deg, 0.0, sun_state, -1, ""});
+                    }
+
+                    // MOON (ID: -2)
+                    {
+                        Vector3 moon_eci = VisibilityCalculator::getMoonPositionECI(now);
+                        auto moon_look = observer.calculateLookAngle(moon_eci, now);
+                        Geodetic moon_geo = VisibilityCalculator::getMoonPositionGeo(now);
+                        // Moon visibility state
+                        VisibilityCalculator::State moon_state = VisibilityCalculator::calculateState(moon_eci, observer.getPositionECI(now), now, moon_look.elevation);
+                        local_rows.push_back({"MOON", moon_look.azimuth, moon_look.elevation, moon_look.range, 0.0, moon_geo.lat_deg, moon_geo.lon_deg, 0.0, moon_state, -2, ""});
+                    }
+                }
+
                 for(auto& sat : sats) {
                     if(!running) break;
                     
@@ -200,6 +294,28 @@ int main(int argc, char* argv[]) {
                     if (rotator && rotator->isConnected() && sat.getNoradId() == selected_norad_id) {
                         if (look.elevation >= config.rotator_min_el) {
                             rotator->setPosition(look.azimuth, look.elevation);
+                        }
+                    }
+
+                    // RIG CONTROL LOGIC (Doppler)
+                    if (rig_ctl && rig_ctl->isConnected() && freq_mgr && sat.getNoradId() == selected_norad_id) {
+                        if (freq_mgr->hasTransmitter(sat.getNoradId())) {
+                            auto tx = freq_mgr->getBestTransmitter(sat.getNoradId());
+
+                            // Calculate Doppler
+                            // Range Rate is in km/s. Positive = Moving away.
+                            // Downlink (Sat -> Earth): f_rx = f_dl * (1 - v/c)
+                            // Uplink (Earth -> Sat): We need to transmit f_tx such that sat receives f_ul.
+                            // Sat receives f_ul = f_tx * (1 - v/c). So f_tx = f_ul / (1 - v/c).
+
+                            double c = 299792.458; // km/s
+                            double factor = 1.0 - (rrate / c);
+
+                            double dl_doppler = static_cast<double>(tx.downlink_low) * factor;
+                            double ul_doppler = (tx.uplink_low > 0) ? static_cast<double>(tx.uplink_low) / factor : 0.0;
+
+                            rig_ctl->setFrequencies(ul_doppler, dl_doppler);
+                            rig_ctl->setMode(tx.mode);
                         }
                     }
 
@@ -252,11 +368,26 @@ int main(int argc, char* argv[]) {
 
                 std::sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
                 
+                // Keep Sun/Moon even if filtered by resize
+                std::vector<DisplayRow> preserved_bodies;
+                for(const auto& r : local_rows) {
+                    if (r.norad_id == -1 || r.norad_id == -2) preserved_bodies.push_back(r);
+                }
+
                 if (!config.show_all_visible) {
                     if (local_rows.size() > (size_t)config.max_sats) local_rows.resize(config.max_sats);
                 } else {
                     if (local_rows.size() > 5000) local_rows.resize(5000);
                 }
+
+                // Re-inject if lost
+                for(const auto& p : preserved_bodies) {
+                    bool found = false;
+                    for(const auto& r : local_rows) { if (r.norad_id == p.norad_id) { found = true; break; } }
+                    if (!found) local_rows.push_back(p);
+                }
+                // Re-sort after re-injection to ensure correct order
+                std::sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
 
                 {
                     std::lock_guard<std::mutex> lock(state.mutex);
