@@ -31,7 +31,9 @@ namespace ve {
 
     inline double toJulianDate(const TimePoint& t) {
         std::time_t tt = Clock::to_time_t(t);
-        std::tm* gmt = std::gmtime(&tt);
+        std::tm gmt_struct;
+        gmtime_r(&tt, &gmt_struct);
+        std::tm* gmt = &gmt_struct;
         int Y = gmt->tm_year + 1900; int M = gmt->tm_mon + 1; int D = gmt->tm_mday;
         if (M <= 2) { Y -= 1; M += 12; }
         int A = Y / 100; int B = 2 - A + (A / 4);
