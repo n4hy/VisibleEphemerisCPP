@@ -14,7 +14,7 @@ It features a **Hybrid Decoupled Architecture** where the UI, Orbital Mechanics,
 * **Massive Scale**: Tracks the entire NORAD Active Catalog (13,000+ objects) simultaneously.
 * **Smart Caching**: Automatic TLE downloading and caching from Celestrak.
 * **Multi-Group Selection**: Track specific combinations (e.g., `amateur,weather,stations`) using the `--groupsel` argument.
-* **Sun and Moon always tracked except in Single Sat mode
+* **Sun and Moon always tracked except in Single Sat mode.
 ### 🖥️ Display Systems
 * **NCurses Terminal Dashboard**: 
     * Flicker-free, color-coded real-time data table.
@@ -31,7 +31,7 @@ It features a **Hybrid Decoupled Architecture** where the UI, Orbital Mechanics,
 * **Optical Mode (Default)**: Filters satellites based on solar illumination (Sunlit satellite + Dark observer).
 * **Radio Mode (`--no-visible`)**: Tracks all satellites above the horizon regardless of lighting conditions (Day/Night/Eclipse).
 * **Doppler & Range Rate**: Real-time calculation of relative velocity (km/s) for radio tuning.
-* **HAMLIB control of rotors and rigs
+* **HAMLIB control of rotors and rigs.
 ---
 
 ## 🛠️ Installation
