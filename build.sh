@@ -1,6 +1,13 @@
 #!/bin/bash
 set -e
 
+# Ensure we are running in Bash
+if [ -z "$BASH_VERSION" ]; then
+    echo "Error: This script must be run with bash."
+    echo "Usage: ./build.sh or bash build.sh"
+    exit 1
+fi
+
 # ANSI Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'

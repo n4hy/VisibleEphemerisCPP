@@ -36,36 +36,53 @@ It features a **Hybrid Decoupled Architecture** where the UI, Orbital Mechanics,
 
 ## 🛠️ Installation
 
-### 1. Dependencies
-Visible Ephemeris requires a C++17 compiler, CMake, and the following libraries:
+We provide an automated build script `build.sh` that handles dependencies (including building `libsgp4` from source) and installation.
 
-**On Raspberry Pi / Debian:**
+### 1. Automated Build (Recommended)
+
+Run the build script using **Bash**. This script will install necessary dependencies, prompt for optional features (like Hamlib radio control), and install the application to `/usr/local/bin`.
+
 ```bash
-sudo apt update
-sudo apt install build-essential cmake libncurses-dev libcurl4-openssl-dev libhamlib-dev
+cd VisibleEphemeris
+chmod +x build.sh
+./build.sh
+# OR
+bash build.sh
 ```
 
-### 2. Install libsgp4 (Required)
-This library provides the SGP4/SDP4 orbital mathematics. You must install it from source:
+**Note:** The script utilizes `sudo` to install dependencies and the final binary.
 
+### 2. Manual Installation
+
+If you prefer to build manually:
+
+**Dependencies (Ubuntu/Debian):**
+```bash
+sudo apt update
+sudo apt install build-essential cmake libncurses-dev libcurl4-openssl-dev pkg-config
+# Optional: libhamlib-dev for Radio Control
+```
+
+**Install libsgp4 (Required):**
 ```bash
 cd ~
-git clone [https://github.com/dnwrnr/sgp4.git](https://github.com/dnwrnr/sgp4.git)
+git clone https://github.com/dnwrnr/sgp4.git
 cd sgp4
 mkdir build && cd build
-cmake ..
-make
+cmake -DCMAKE_INSTALL_PREFIX=/usr/local ..
+make -j$(nproc)
 sudo make install
 sudo ldconfig
 ```
 
-### 3. Build Visible Ephemeris
-
+**Build Visible Ephemeris:**
 ```bash
 cd ~/VisibleEphemeris
 mkdir build && cd build
 cmake ..
-make -j4
+# To enable Hamlib (if installed): cmake -DENABLE_HAMLIB=ON ..
+make -j$(nproc)
+sudo make install
 ```
 
 ---
