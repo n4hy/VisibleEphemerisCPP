@@ -32,13 +32,14 @@ It features a **Hybrid Decoupled Architecture** where the UI, Orbital Mechanics,
 * **Radio Mode (`--no-visible`)**: Tracks all satellites above the horizon regardless of lighting conditions (Day/Night/Eclipse).
 * **Doppler & Range Rate**: Real-time calculation of relative velocity (km/s) for radio tuning.
 * **HAMLIB control of rotors and rigs.
+
 ---
 
 ## 🛠️ Installation
 
 We provide an automated build script `build.sh` that handles dependencies (including building `libsgp4` from source) and installation.
 
-### 1. Automated Build (Recommended)
+### Automated Build (Required)
 
 Run the build script using **Bash**. This script will install necessary dependencies, prompt for optional features (like Hamlib radio control), and install the application to `/usr/local/bin`.
 
@@ -52,47 +53,29 @@ bash build.sh
 
 **Note:** The script utilizes `sudo` to install dependencies and the final binary.
 
-### 2. Manual Installation
+---
 
-If you prefer to build manually:
+## 💻 Platform Specifics
 
-**Dependencies (Ubuntu/Debian):**
-```bash
-sudo apt update
-sudo apt install build-essential cmake libncurses-dev libcurl4-openssl-dev pkg-config
-# Optional: libhamlib-dev for Radio Control
-```
+### Ubuntu Linux (PC/Laptop)
+* **Performance:** High. Capable of tracking 20,000+ objects without UI lag.
+* **Radio Control:** Typically uses **USB** interfaces (CAT control) for transceivers and rotators. Ensure your user is in the `dialout` group to access serial ports (`sudo usermod -aG dialout $USER`).
+* **Usage:** Suitable for desktop use or as a powerful headless server.
 
-**Install libsgp4 (Required):**
-```bash
-cd ~
-git clone https://github.com/dnwrnr/sgp4.git
-cd sgp4
-mkdir build && cd build
-cmake -DCMAKE_INSTALL_PREFIX=/usr/local ..
-make -j$(nproc)
-sudo make install
-sudo ldconfig
-```
-
-**Build Visible Ephemeris:**
-```bash
-cd ~/VisibleEphemeris
-mkdir build && cd build
-cmake ..
-# To enable Hamlib (if installed): cmake -DENABLE_HAMLIB=ON ..
-make -j$(nproc)
-sudo make install
-```
+### Raspberry Pi 5
+* **Performance:** Optimized. Maintains <5% CPU utilization for ~13,000 objects.
+* **Radio Control:** Can use **USB** or **GPIO** (HATs) for rig/rotor control.
+* **Thermal:** Passive cooling is sufficient for typical loads, but active cooling is recommended for 24/7 operation with full catalog tracking.
+* **Usage:** Ideal as a dedicated "always-on" appliance.
 
 ---
 
 ## 🎮 Usage
-Run the application from the build directory. It will automatically generate a `config.yaml` and `tle_cache` directory on first run.
+Run the application from anywhere (installed to path):
 
 **Basic Command**
 ```bash
-./VisibleEphemeris
+VisibleEphemeris
 ```
 
 ### Common Examples
@@ -100,18 +83,18 @@ Run the application from the build directory. It will automatically generate a `
 **1. Amateur Radio Mode (Ham Radio Satellites)**
 Show all amateur satellites above the horizon, regardless of daylight.
 ```bash
-./VisibleEphemeris --groupsel amateur --no-visible --minel 0
+VisibleEphemeris --groupsel amateur --no-visible --minel 0
 ```
 
 **2. Visual Observing (ISS & Bright Objects)**
 Show only satellites that are sunlit while the observer is in darkness.
 ```bash
-./VisibleEphemeris --groupsel "stations,visual" --minel 10
+VisibleEphemeris --groupsel "stations,visual" --minel 10
 ```
 
 **3. Specific Location Override**
 ```bash
-./VisibleEphemeris --lat 39.54 --lon -76.09 --alt 0.1
+VisibleEphemeris --lat 39.54 --lon -76.09 --alt 0.1
 ```
 
 ---
