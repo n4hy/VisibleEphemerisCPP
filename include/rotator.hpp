@@ -1,7 +1,11 @@
 #pragma once
 
 #include <string>
+
+#ifdef ENABLE_HAMLIB
 #include <hamlib/rotator.h>
+#endif
+
 #include "logger.hpp"
 
 namespace ve {
@@ -19,7 +23,10 @@ namespace ve {
 
         std::string host_;
         int port_;
-        ROT* rot_{nullptr};
         bool connected_{false};
+
+#ifdef ENABLE_HAMLIB
+        ROT* rot_{nullptr};
+#endif
     };
 }

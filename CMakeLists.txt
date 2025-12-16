@@ -4,11 +4,23 @@ project(VisibleEphemeris)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(ENABLE_HAMLIB "Enable Hamlib support" ON)
+
 find_package(CURL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Curses REQUIRED) 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(HAMLIB REQUIRED hamlib)
+
+if(ENABLE_HAMLIB)
+    pkg_check_modules(HAMLIB hamlib)
+    if(HAMLIB_FOUND)
+        add_compile_definitions(ENABLE_HAMLIB)
+        include_directories(${HAMLIB_INCLUDE_DIRS})
+    else()
+        message(WARNING "Hamlib not found, disabling Hamlib support.")
+        set(ENABLE_HAMLIB OFF)
+    endif()
+endif()
 
 set(USER_HOME $ENV{HOME})
 set(PATHS_TO_CHECK "${USER_HOME}/sgp4/build/install" "/usr/local" "/usr")
@@ -50,7 +62,15 @@ set(SOURCES
 
 include_directories(include)
 include_directories(${SGP4_INCLUDE_DIR})
-include_directories(${HAMLIB_INCLUDE_DIRS})
 
 add_executable(VisibleEphemeris ${SOURCES})
-target_link_libraries(VisibleEphemeris PRIVATE ${SGP4_LIB} CURL::libcurl Threads::Threads ${CURSES_LIBRARIES} ${HAMLIB_LIBRARIES})
+
+set(LIBS ${SGP4_LIB} CURL::libcurl Threads::Threads ${CURSES_LIBRARIES})
+if(ENABLE_HAMLIB)
+    list(APPEND LIBS ${HAMLIB_LIBRARIES})
+endif()
+
+target_link_libraries(VisibleEphemeris PRIVATE ${LIBS})
+
+# Installation
+install(TARGETS VisibleEphemeris DESTINATION bin)
