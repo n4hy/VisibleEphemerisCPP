@@ -1,0 +1,4 @@
+sgp4
+requests
+numpy
+skyfield
