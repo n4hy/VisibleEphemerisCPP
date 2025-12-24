@@ -24,6 +24,11 @@ class Satellite:
         self.next_event = "N/A"
         self.apogee = 0.0 # Approximate
 
+        # Pass Prediction Cache
+        self.passes = [] # List of (time, event_type_int)
+        self.last_pass_calc = None
+        self.is_computing = False
+
     def update_position(self, observer, t_now, trail_mins=0):
         # Ensure t_now is a Skyfield Time object
         ts = load.timescale()
@@ -92,3 +97,65 @@ class Satellite:
             points.append([lats[i], lons[i]])
 
         return points
+
+    def compute_passes(self, observer_location, t_start_ts, duration_days=1, min_el=0.0):
+        """
+        Computes pass events (rise/culminate/set) for the given duration.
+        NOTE: This is computationally expensive and should be run in a background thread.
+        """
+        ts = load.timescale()
+        t0 = t_start_ts
+        t1 = ts.from_datetime(t_start_ts.utc_datetime() + datetime.timedelta(days=duration_days))
+
+        t, events = self.skyfield_sat.find_events(observer_location, t0, t1, altitude_degrees=min_el)
+
+        # Store as list of (time_obj, event_code)
+        # event_code: 0=rise, 1=culminate, 2=set
+        self.passes = list(zip(t, events))
+        self.last_pass_calc = t_start_ts
+        return self.passes
+
+    def get_next_event_text(self, t_now_ts):
+        """
+        Returns a string describing the next event based on cached passes.
+        e.g., "AOS 10m 30s" or "LOS 2m 10s"
+        """
+        if not self.passes:
+            return "Calculating..." if self.is_computing else "N/A"
+
+        # Find first event in the future
+        next_evt = None
+        for t, code in self.passes:
+            if t.tt > t_now_ts.tt: # Simple time comparison
+                next_evt = (t, code)
+                break
+
+        if not next_evt:
+            return "None < 24h"
+
+        t_event, code = next_evt
+
+        # Format difference
+        diff_seconds = (t_event.utc_datetime() - t_now_ts.utc_datetime()).total_seconds()
+
+        # If diff is negative (shouldn't be due to loop check, but safety), return N/A
+        if diff_seconds < 0: return "N/A"
+
+        m, s = divmod(int(diff_seconds), 60)
+        h, m = divmod(m, 60)
+
+        time_str = f"{m}m {s}s"
+        if h > 0: time_str = f"{h}h {time_str}"
+
+        # Code: 0=Rise (AOS), 1=Culminate, 2=Set (LOS)
+        # Note: If next is Rise, we are currently AOS? No, Rise means AOS is coming.
+        # If next is Set, we are likely currently UP (AOS happened).
+        # C++ Logic: "next.is_aos ? 'AOS ' : 'LOS '"
+        # Skyfield: 0=Rise, 1=Culminate, 2=Set
+
+        label = ""
+        if code == 0: label = "AOS"
+        elif code == 1: label = "CUL"
+        elif code == 2: label = "LOS"
+
+        return f"{label} {time_str}"

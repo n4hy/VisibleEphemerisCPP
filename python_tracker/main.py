@@ -6,12 +6,14 @@ import sys
 import select
 import termios
 import tty
+import concurrent.futures
 
 from tle_manager import TLEManager
 from satellite import Satellite
 from observer import Observer
 from config_manager import ConfigManager
 import web_server
+import text_server
 
 def clear_screen():
     """Clears the console screen."""
@@ -66,9 +68,21 @@ def main():
     satellites = [Satellite(tle) for tle in tles]
     print(f"Successfully loaded {len(satellites)} satellites.")
 
+    # Thread Pool for Math
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
     # Start Web Server
     print("Starting Web UI on port 8080...")
     web_server.start_server_thread()
+
+    # Start Text Server
+    print("Starting Text Mirror on port 12345...")
+    try:
+        txt_server = text_server.TextServer(12345)
+        txt_server.start()
+    except Exception as e:
+        print(f"Failed to start TextServer: {e}")
+        txt_server = None
 
     print("Starting tracker... Press 'q' to quit.")
     time.sleep(2)
@@ -84,16 +98,39 @@ def main():
                         break # Exit loop to handle save prompt
 
                 t_now = datetime.datetime.now(datetime.timezone.utc)
+                # Convert to Skyfield Time once for efficiency
+                t_now_ts = observer.ts.from_datetime(t_now)
 
                 # 1. Update Sun Position (for terminator)
-                sun_lat, sun_lon = observer.get_sun_position(t_now)
+                sun_lat, sun_lon = observer.get_sun_position(t_now_ts)
 
                 visible_sats_display = [] # For Terminal
                 web_sats_data = []        # For Web API
 
                 for sat in satellites:
                     # Update Satellite State
-                    sat.update_position(observer, t_now, args.trail_mins)
+                    sat.update_position(observer, t_now_ts, args.trail_mins)
+
+                    # Pass Prediction Logic
+                    # Check if passes are stale (older than 24h) or empty
+                    needs_calc = False
+                    if not sat.passes:
+                        needs_calc = True
+                    elif sat.last_pass_calc:
+                        age = (t_now - sat.last_pass_calc.utc_datetime()).total_seconds()
+                        if age > 86400: # 24 hours
+                            needs_calc = True
+
+                    if needs_calc and not sat.is_computing:
+                        sat.is_computing = True
+                        # Submit to thread pool
+                        # We pass observer.location because Observer object might not be thread safe or pickleable?
+                        # Skyfield objects are usually fine but let's be safe.
+                        executor.submit(sat.compute_passes, observer.location, t_now_ts, 1, args.minel).add_done_callback(
+                            lambda future, s=sat: setattr(s, 'is_computing', False)
+                        )
+
+                    sat.next_event = sat.get_next_event_text(t_now_ts)
 
                     # Filter Logic
                     should_display = False
@@ -128,7 +165,8 @@ def main():
                             'az': sat.az,
                             'el': sat.el,
                             'range': sat.range,
-                            'vis': sat.visibility
+                            'vis': sat.visibility,
+                            'next': sat.next_event
                         })
 
                 # Sort for display
@@ -143,33 +181,54 @@ def main():
                 }
                 web_server.tracker_state['satellites'] = web_sats_data
 
-                # Terminal Output
-                clear_screen()
+                # --- Build Output ---
                 mode_str = "SHOW ALL (No Filter)" if args.no_visible else "OPTICAL MODE (Sunlit Only)"
-                header = f"Observer: {args.lat:.2f}, {args.lon:.2f} | {mode_str} | {len(visible_sats_display)}/{len(satellites)} | {t_now.strftime('%H:%M:%S UTC')}"
-                print(header)
-                print("-" * len(header))
 
-                print(f"{'Name':<25} {'Azimuth':>10} {'Elevation':>12} {'Range (km)':>15} {'Vis':>5}")
-                print(f"{'='*25} {'='*10} {'='*12} {'='*15} {'='*5}")
+                output_lines = []
+                header = f"Observer: {args.lat:.2f}, {args.lon:.2f} | {mode_str} | {len(visible_sats_display)}/{len(satellites)} | {t_now.strftime('%H:%M:%S UTC')}"
+                output_lines.append(header)
+                output_lines.append("-" * len(header))
+                output_lines.append(f"{'Name':<20} {'Az':>6} {'El':>6} {'Range':>10} {'Vis':>4} {'Next Event':>15}")
+                output_lines.append(f"{'='*20} {'='*6} {'='*6} {'='*10} {'='*4} {'='*15}")
 
                 if not visible_sats_display:
-                    print("No satellites matching criteria.")
+                    output_lines.append("No satellites matching criteria.")
                 else:
-                    limit = 30
-                    for s in visible_sats_display[:limit]:
-                        print(f"{s['name']:<25} {s['az']:10.2f} {s['el']:12.2f} {s['range']:15.2f} {s['vis']:>5}")
-                    if len(visible_sats_display) > limit:
-                        print(f"... and {len(visible_sats_display)-limit} more ...")
+                    limit_console = 30
+                    limit_text = 200
+
+                    # Console Print
+                    clear_screen()
+                    for line in output_lines: print(line)
+
+                    for i, s in enumerate(visible_sats_display):
+                        # Truncate name
+                        name_str = (s['name'][:19] + '..') if len(s['name']) > 19 else s['name']
+                        line = f"{name_str:<20} {s['az']:6.1f} {s['el']:6.1f} {s['range']:10.0f} {s['vis']:>4} {s['next']:>15}"
+
+                        if i < limit_console:
+                            print(line)
+                        if i == limit_console:
+                            print(f"... and {len(visible_sats_display)-limit_console} more ...")
+
+                        # Add to TextServer buffer
+                        if i < limit_text:
+                            output_lines.append(line)
+
+                    if len(visible_sats_display) > limit_text:
+                        output_lines.append(f"... and {len(visible_sats_display)-limit_text} more ...")
 
                 print("\n" + ("-" * len(header)))
                 print(f"Web UI running at http://localhost:8080")
+                print(f"Text Mirror running at http://localhost:12345")
                 print("Press 'q' to quit.")
+
+                # Update TextServer
+                if txt_server: txt_server.update_data("\n".join(output_lines))
 
                 time.sleep(1)
 
         # --- Shutdown / Save Prompt ---
-        # Poller is exited here, so stdin is back to normal
         print("\nStopping tracker...")
         while True:
             response = input("Save configuration to config.yaml? (y/n): ").strip().lower()
@@ -189,17 +248,18 @@ def main():
                 print("Configuration not saved.")
                 break
 
+        if txt_server: txt_server.stop()
+        executor.shutdown(wait=False)
+
     except KeyboardInterrupt:
         print("\nTracker stopped by user.")
-        # Optional: Ask to save on Ctrl+C too?
-        # User requested: "When q is struck...".
-        # Standard behavior usually implies Ctrl+C is abrupt abort, but maybe we should offer save there too?
-        # User said "Duplicate this behavior" referring to C++.
-        # In C++, Ctrl+C usually kills it unless caught.
-        # But 'q' is the controlled exit.
+        if txt_server: txt_server.stop()
+        if 'executor' in locals(): executor.shutdown(wait=False)
         sys.exit(0)
     except Exception as e:
         print(f"\nAn unexpected error occurred: {e}", file=sys.stderr)
+        if 'txt_server' in locals() and txt_server: txt_server.stop()
+        if 'executor' in locals(): executor.shutdown(wait=False)
         raise
 
 if __name__ == "__main__":
