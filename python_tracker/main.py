@@ -18,7 +18,6 @@ def main():
     """Main application logic."""
 
     # 1. Load Config
-    # If python_tracker/config.yaml doesn't exist, try ../config.yaml or default
     config_path = "python_tracker/config.yaml"
     if not os.path.exists(config_path):
         config_path = "config.yaml"
@@ -73,16 +72,18 @@ def main():
                 sat.update_position(observer, t_now, args.trail_mins)
 
                 # Filter Logic
-                is_above_horizon = sat.el >= args.minel
+                should_display = False
 
-                # Check for optical visibility if NOT in radio mode
-                # If --no-visible is set, we skip optical check
-                is_optically_valid = True
-                if not args.no_visible:
-                    is_optically_valid = (sat.visibility == "YES") # Only show Visual passes
+                if args.no_visible:
+                    # Radio Mode: Show ALL satellites (skip min_el check to match C++ 'show_all_visible' behavior)
+                    should_display = True
+                else:
+                    # Optical Mode: Must be above horizon AND visibly illuminated
+                    is_above_horizon = sat.el >= args.minel
+                    is_optically_valid = (sat.visibility == "YES")
+                    should_display = is_above_horizon and is_optically_valid
 
-                # Combine Filters
-                if is_above_horizon and is_optically_valid:
+                if should_display:
                     # Add to lists
                     web_data = {
                         "id": sat.norad_id,
@@ -92,8 +93,8 @@ def main():
                         "a": sat.az,
                         "e": sat.el,
                         "v": sat.visibility,
-                        "next": sat.next_event, # TODO: Implement next event logic
-                        "apo": sat.alt_km, # Using Alt as proxy for apogee/footprint calculation in JS
+                        "next": sat.next_event,
+                        "apo": sat.alt_km,
                         "trail": sat.trail
                     }
                     web_sats_data.append(web_data)
@@ -120,7 +121,7 @@ def main():
 
             # Terminal Output
             clear_screen()
-            mode_str = "RADIO MODE (All Visible)" if args.no_visible else "OPTICAL MODE (Sunlit Only)"
+            mode_str = "RADIO MODE (Show All)" if args.no_visible else "OPTICAL MODE (Sunlit Only)"
             header = f"Observer: {args.lat:.2f}, {args.lon:.2f} | {mode_str} | {len(visible_sats_display)}/{len(satellites)} | {t_now.strftime('%H:%M:%S UTC')}"
             print(header)
             print("-" * len(header))
@@ -131,8 +132,12 @@ def main():
             if not visible_sats_display:
                 print("No satellites matching criteria.")
             else:
-                for s in visible_sats_display:
+                # Limit terminal output to top 30 to prevent flickering/scroll issues if showing all 100+
+                limit = 30
+                for s in visible_sats_display[:limit]:
                     print(f"{s['name']:<25} {s['az']:10.2f} {s['el']:12.2f} {s['range']:15.2f} {s['vis']:>5}")
+                if len(visible_sats_display) > limit:
+                    print(f"... and {len(visible_sats_display)-limit} more ...")
 
             print("\n" + ("-" * len(header)))
             print(f"Web UI running at http://localhost:8080")
@@ -145,7 +150,6 @@ def main():
         sys.exit(0)
     except Exception as e:
         print(f"\nAn unexpected error occurred: {e}", file=sys.stderr)
-        # sys.exit(1) # Keep running to see error?
         raise
 
 if __name__ == "__main__":
