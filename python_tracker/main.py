@@ -47,7 +47,7 @@ def main():
     parser.add_argument("--alt", type=float, default=cm.get('alt', 0.1), help="Observer Altitude (km)")
     parser.add_argument("--groupsel", type=str, default=cm.get('group_selection', "active"), help="Comma-separated Celestrak group names")
     parser.add_argument("--minel", type=float, default=cm.get('min_el', 0.0), help="Minimum elevation filter (degrees)")
-    parser.add_argument("--no-visible", action='store_true', default=cm.get('show_all_visible', False), help="Radio Mode: Ignore optical visibility constraints")
+    parser.add_argument("--no-visible", action='store_true', default=cm.get('show_all_visible', False), help="Show ALL satellites (ignore filters)")
     parser.add_argument("--trail_mins", type=int, default=cm.get('trail_length_mins', 5), help="Trail length in minutes")
 
     args = parser.parse_args()
@@ -97,13 +97,13 @@ def main():
 
                     # Filter Logic
                     should_display = False
-                    is_above_horizon = sat.el >= args.minel
 
                     if args.no_visible:
-                        # Radio Mode: Show satellites above horizon regardless of optical visibility
-                        should_display = is_above_horizon
+                        # User Request: "REJECT ALL FILTERS... I want to see every bloody satellite"
+                        should_display = True
                     else:
                         # Optical Mode: Must be above horizon AND visibly illuminated
+                        is_above_horizon = sat.el >= args.minel
                         is_optically_valid = (sat.visibility == "YES")
                         should_display = is_above_horizon and is_optically_valid
 
@@ -145,7 +145,7 @@ def main():
 
                 # Terminal Output
                 clear_screen()
-                mode_str = "RADIO MODE (Show All > min_el)" if args.no_visible else "OPTICAL MODE (Sunlit Only)"
+                mode_str = "SHOW ALL (No Filter)" if args.no_visible else "OPTICAL MODE (Sunlit Only)"
                 header = f"Observer: {args.lat:.2f}, {args.lon:.2f} | {mode_str} | {len(visible_sats_display)}/{len(satellites)} | {t_now.strftime('%H:%M:%S UTC')}"
                 print(header)
                 print("-" * len(header))
