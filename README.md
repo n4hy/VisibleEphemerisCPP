@@ -1,5 +1,5 @@
 # Visible Ephemeris
-### High-Performance Satellite Tracking Appliance (C++17)
+### High-Performance Satellite Tracking Appliance (C++17) & Python Prototype
 
 **Visible Ephemeris** is a modern, spiritual successor to *Quiktrak* (1986), re-engineered for the Raspberry Pi 5 and modern silicon. It is capable of propagating 13,000+ satellites in real-time with sub-second updates while maintaining <5% CPU utilization.
 
@@ -10,7 +10,7 @@ It features a **Hybrid Decoupled Architecture** where the UI, Orbital Mechanics,
 ## 🚀 Core Features
 
 ### 🛰️ Tracking Engine
-* **SGP4/SDP4 Propagation**: Uses `libsgp4` for high-precision orbital math.
+* **SGP4/SDP4 Propagation**: Uses `libsgp4` (C++) or `Skyfield` (Python) for high-precision orbital math.
 * **Massive Scale**: Tracks the entire NORAD Active Catalog (13,000+ objects) simultaneously.
 * **Smart Caching**: Automatic TLE downloading and caching from Celestrak.
 * **Multi-Group Selection**: Track specific combinations (e.g., `amateur,weather,stations`) using the `--groupsel` argument.
@@ -52,6 +52,18 @@ bash build.sh
 ```
 
 **Note:** The script utilizes `sudo` to install dependencies and the final binary.
+
+### Python Tracker (Prototype)
+
+For the Python version (located in `python_tracker/`), install dependencies manually:
+
+```bash
+cd python_tracker
+pip install -r requirements.txt
+python3 main.py --groupsel stations --no-visible
+```
+
+The Python version runs a **FastAPI** web server on port 8080 with identical UI features to the C++ version.
 
 ---
 
