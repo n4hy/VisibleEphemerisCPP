@@ -306,7 +306,7 @@ int main(int argc, char* argv[]) {
                 std::lock_guard<std::mutex> lock(state.mutex);
                 if (state.updated) {
                     current_rows = state.rows;
-                    web_server.updateData(state.rows, state.active_sats, config);
+                    web_server.updateData(state.rows, state.active_sats, config, Clock::now() + time_offset);
                 } else {
                     current_rows = state.rows; 
                 }

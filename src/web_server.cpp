@@ -148,7 +148,11 @@ namespace ve {
         function updateSats() {
             fetch('/api/satellites').then(r=>r.json()).then(d => {
                 lastData = d.satellites || [];
-                document.getElementById('status').innerText = "Live: " + lastData.length;
+                var status = "Live: " + lastData.length;
+                if (d.config && d.config.time) {
+                    status += " | " + d.config.time;
+                }
+                document.getElementById('status').innerText = status;
                 renderTable();
                 renderMap(d.config);
             }).catch(e => console.error("Data fetch error:", e));
@@ -331,9 +335,9 @@ namespace ve {
     void WebServer::start() { running_ = true; server_thread_ = std::thread(&WebServer::serverLoop, this); }
     void WebServer::runBlocking() { running_ = true; serverLoop(); }
     void WebServer::stop() { running_ = false; if (server_fd_ >= 0) { shutdown(server_fd_, SHUT_RDWR); close(server_fd_); server_fd_ = -1; } if(server_thread_.joinable()) server_thread_.join(); }
-    void WebServer::updateData(const std::vector<DisplayRow>& rows, const std::vector<Satellite*>& raw_sats, const AppConfig& config) {
+    void WebServer::updateData(const std::vector<DisplayRow>& rows, const std::vector<Satellite*>& raw_sats, const AppConfig& config, const TimePoint& t) {
         std::lock_guard<std::mutex> lock(data_mutex_);
-        current_json_data_ = buildJson(rows, raw_sats, config);
+        current_json_data_ = buildJson(rows, raw_sats, config, t);
         last_known_config_ = config;
     }
     bool WebServer::hasPendingConfig() { std::lock_guard<std::mutex> lock(config_mutex_); return config_changed_; }
@@ -343,12 +347,19 @@ namespace ve {
         return selected_norad_id_.load();
     }
 
-    std::string WebServer::buildJson(const std::vector<DisplayRow>& rows, const std::vector<Satellite*>& raw_sats, const AppConfig& config) {
+    std::string WebServer::buildJson(const std::vector<DisplayRow>& rows, const std::vector<Satellite*>& raw_sats, const AppConfig& config, const TimePoint& t) {
         std::stringstream ss;
-        Geodetic sun = VisibilityCalculator::getSunPositionGeo(Clock::now());
+        Geodetic sun = VisibilityCalculator::getSunPositionGeo(t);
+
+        std::time_t tt = Clock::to_time_t(t);
+        std::tm* loc = std::localtime(&tt);
+        char time_buf[64];
+        std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S LOC", loc);
+
         ss << "{\"config\":{\"lat\":" << config.lat << ",\"lon\":" << config.lon << ",\"min_el\":" << config.min_el 
            << ",\"max_apo\":" << config.max_apo << ",\"show_all\":" << (config.show_all_visible ? "true" : "false") 
            << ",\"groups\":\"" << config.group_selection << "\","
+           << "\"time\":\"" << time_buf << "\","
            << "\"sun_lat\":" << sun.lat_deg << ",\"sun_lon\":" << sun.lon_deg << "},";
         ss << "\"satellites\":[";
         for(size_t i=0; i<rows.size(); ++i) {

@@ -21,7 +21,7 @@ namespace ve {
         void runBlocking(); // Blocking (for Builder Phase)
         void stop();
 
-        void updateData(const std::vector<DisplayRow>& rows, const std::vector<Satellite*>& raw_sats, const AppConfig& config);
+        void updateData(const std::vector<DisplayRow>& rows, const std::vector<Satellite*>& raw_sats, const AppConfig& config, const TimePoint& t);
         
         bool hasPendingConfig();
         AppConfig popPendingConfig();
@@ -47,7 +47,7 @@ namespace ve {
         bool config_changed_ = false;
 
         void serverLoop();
-        std::string buildJson(const std::vector<DisplayRow>& rows, const std::vector<Satellite*>& raw_sats, const AppConfig& config);
+        std::string buildJson(const std::vector<DisplayRow>& rows, const std::vector<Satellite*>& raw_sats, const AppConfig& config, const TimePoint& t);
         void handleRequest(int client_socket, const std::string& request);
         std::map<std::string, std::string> parseQuery(const std::string& query);
         std::string urlDecode(const std::string& str);
