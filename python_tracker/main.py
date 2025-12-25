@@ -116,7 +116,8 @@ def main():
                     needs_calc = False
                     if not sat.passes:
                         needs_calc = True
-                    elif sat.last_pass_calc:
+                    elif sat.last_pass_calc is not None:
+                        # Fix: Ensure last_pass_calc is not treated as boolean directly to avoid Skyfield TypeError
                         age = (t_now - sat.last_pass_calc.utc_datetime()).total_seconds()
                         if age > 86400: # 24 hours
                             needs_calc = True
@@ -124,8 +125,6 @@ def main():
                     if needs_calc and not sat.is_computing:
                         sat.is_computing = True
                         # Submit to thread pool
-                        # We pass observer.location because Observer object might not be thread safe or pickleable?
-                        # Skyfield objects are usually fine but let's be safe.
                         executor.submit(sat.compute_passes, observer.location, t_now_ts, 1, args.minel).add_done_callback(
                             lambda future, s=sat: setattr(s, 'is_computing', False)
                         )
