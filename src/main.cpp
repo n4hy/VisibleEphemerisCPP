@@ -31,6 +31,7 @@ void print_help() {
               << "  --groupsel <list> Comma-separated groups (e.g. \"amateur,weather,stations\")\n"
               << "  --satsel <list>   Comma-separated Satellite Names (Overrules groupsel)\n"
               << "  --no-visible     Radio Mode: Show all sats > min_el (ignore light)\n"
+              << "  --time <str>     Simulate time (e.g. \"2025-01-01 12:00:00\")\n"
               << "\nConfiguration is loaded from config.yaml by default.\n";
 }
 
@@ -71,12 +72,30 @@ int main(int argc, char* argv[]) {
 
     bool refresh_tle = false;
     bool builder_mode = false;
+    std::chrono::seconds time_offset(0);
+    bool sim_time = false;
 
     // 2. Parse Arguments
     for(int i=1; i<argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--groupbuild") builder_mode = true;
         else if (arg == "--refresh") refresh_tle = true;
+        else if (arg == "--time") {
+            if (i+1 < argc) {
+                std::string t_str = argv[++i];
+                std::tm t = {};
+                std::stringstream ss(t_str);
+                ss >> std::get_time(&t, "%Y-%m-%d %H:%M:%S");
+                if (ss.fail()) {
+                    std::cerr << "Invalid time format. Use \"YYYY-MM-DD HH:MM:SS\"" << std::endl;
+                    return 1;
+                }
+                auto sim_tp = std::chrono::system_clock::from_time_t(std::mktime(&t));
+                time_offset = std::chrono::duration_cast<std::chrono::seconds>(sim_tp - Clock::now());
+                sim_time = true;
+                Logger::log("Simulating Time: " + t_str + " (Offset: " + std::to_string(time_offset.count()) + "s)");
+            }
+        }
         else if (arg == "--lat") { if (i+1 < argc) config.lat = std::stod(argv[++i]); }
         else if (arg == "--lon") { if (i+1 < argc) config.lon = std::stod(argv[++i]); }
         else if (arg == "--alt") { if (i+1 < argc) config.alt = std::stod(argv[++i]); }
@@ -173,7 +192,7 @@ int main(int argc, char* argv[]) {
                     observer = Observer(config.lat, config.lon, config.alt); 
                 }
 
-                auto now = Clock::now();
+                auto now = Clock::now() + time_offset;
                 std::vector<DisplayRow> local_rows;
                 std::vector<Satellite*> local_sats;
                 
@@ -291,7 +310,7 @@ int main(int argc, char* argv[]) {
                 }
             }
             
-            display.update(current_rows, observer, Clock::now(), sats.size(), current_rows.size(), config.show_all_visible, config.min_el);
+            display.update(current_rows, observer, Clock::now() + time_offset, sats.size(), current_rows.size(), config.show_all_visible, config.min_el);
             text_server.updateData(display.getLastFrame()); 
         }
 
