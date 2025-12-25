@@ -66,8 +66,9 @@ namespace ve {
         drawHeader(obs, t, rows.size(), total_tracked, filter_kept);
         
         std::time_t tt = Clock::to_time_t(t);
+        std::tm* loc_tm = std::localtime(&tt);
         ss << "VISIBLE EPHEMERIS v12.65-CODE-ONLY\n";
-        ss << std::put_time(std::gmtime(&tt), "%Y-%m-%d %H:%M:%S UTC") << "\n";
+        ss << std::put_time(loc_tm, "%Y-%m-%d %H:%M:%S LOC") << "\n";
         auto loc = obs.getLocation();
         ss << "OBS: " << loc.lat_deg << ", " << loc.lon_deg << " | SHOWN: " << rows.size() << "\n\n";
 
@@ -207,9 +208,9 @@ namespace ve {
 
     void Display::drawHeader(const Observer& obs, const TimePoint& t, int visible, int total, int kept) {
         std::time_t tt = Clock::to_time_t(t);
-        std::tm* gmt = std::gmtime(&tt);
+        std::tm* loc_tm = std::localtime(&tt);
         char time_buf[32];
-        std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S UTC", gmt);
+        std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S LOC", loc_tm);
         
         attron(COLOR_PAIR(5));
         move(0,0);

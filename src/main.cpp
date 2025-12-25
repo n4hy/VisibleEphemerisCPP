@@ -90,12 +90,12 @@ int main(int argc, char* argv[]) {
                     std::cerr << "Invalid time format. Use \"YYYY-MM-DD HH:MM:SS\"" << std::endl;
                     return 1;
                 }
-                // Force UTC interpretation
-                t.tm_isdst = 0; // No DST in UTC
-                auto sim_tp = std::chrono::system_clock::from_time_t(timegm(&t));
+                // Interpret as Local Time (mktime)
+                t.tm_isdst = -1; // Let mktime determine DST
+                auto sim_tp = std::chrono::system_clock::from_time_t(std::mktime(&t));
                 time_offset = std::chrono::duration_cast<std::chrono::seconds>(sim_tp - Clock::now());
                 sim_time = true;
-                Logger::log("Simulating Time (UTC): " + t_str + " (Offset: " + std::to_string(time_offset.count()) + "s)");
+                Logger::log("Simulating Time (Local): " + t_str + " (Offset: " + std::to_string(time_offset.count()) + "s)");
             }
         }
         else if (arg == "--lat") { if (i+1 < argc) config.lat = std::stod(argv[++i]); }
