@@ -55,15 +55,35 @@ bash build.sh
 
 ### Python Tracker (Prototype)
 
-For the Python version (located in `python_tracker/`), install dependencies manually:
+For the Python version (located in `python_tracker/`), utilize the following instructions.
 
+**Prerequisites:**
+*   Python 3.10+ (Recommended)
+*   Linux Environment (required for `termios`/`tty` interactive input support)
+
+**Installation:**
 ```bash
 cd python_tracker
 pip install -r requirements.txt
-python3 main.py --groupsel stations --no-visible
 ```
 
-The Python version runs a **FastAPI** web server on port 8080 with identical UI features to the C++ version.
+**Usage:**
+Run the tracker from the `python_tracker` directory.
+```bash
+python3 main.py --groupsel stations --lat 39.54 --lon -76.09 --alt 0.1
+```
+
+**Key Arguments:**
+*   `--no-visible`: **Show ALL Satellites**. This mode ignores all filters (Optical Visibility and Minimum Elevation), effectively displaying the entire loaded catalog. Useful for debugging or verifying TLE loads.
+*   `--groupsel`: Comma-separated list of Celestrak groups (e.g., `stations,amateur`).
+*   `--refresh`: Forces a re-download of TLE data (default behavior uses 24h cache).
+
+**Features:**
+*   **Web Dashboard (Port 8080):** Full interactive map and table, powered by FastAPI.
+*   **Text Mirror (Port 12345):** Raw HTML mirror of the terminal output.
+*   **Pass Prediction:** Calculates next AOS/LOS events asynchronously.
+*   **Shared Config:** Loads settings from the root `config.yaml` if present.
+*   **Interactive Shutdown:** Press `q` to stop and optionally save the current configuration.
 
 ---
 
