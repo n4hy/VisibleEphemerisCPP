@@ -146,6 +146,7 @@ The application saves your settings to `config.yaml` on exit. You can override t
 | `--no-visible` | Radio Mode: Ignore optical visibility constraints | False |
 | `--trail_mins <N>` | Length of ground track trail (+/- minutes) | 5 |
 | `--refresh` | Force fresh download of TLE data | False |
+| `--time <str>` | Simulate Time (Format: "YYYY-MM-DD HH:MM:SS"). **Must be UTC.** | Real-time |
 
 ---
 
