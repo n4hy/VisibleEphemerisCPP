@@ -8,5 +8,8 @@ namespace ve {
         // New Helper to get Lat/Lon of Sun
         static Geodetic getSunPositionGeo(const TimePoint& t);
         static State calculateState(const Vector3& sat, const Vector3& obs, const TimePoint& t, double el);
+
+        // Flare Calculation: Returns 0=None, 1=Near (0.5-1.0), 2=Hit (<0.5)
+        static int checkFlare(const Vector3& sat_eci, const Vector3& obs_eci, const Vector3& sun_eci, double apogee_km);
     };
 }

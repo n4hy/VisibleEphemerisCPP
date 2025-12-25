@@ -1,5 +1,6 @@
 #include "visibility.hpp"
 #include <cmath>
+#include <iostream>
 
 namespace ve {
     Vector3 VisibilityCalculator::getSunPositionECI(const TimePoint& t) {
@@ -37,5 +38,48 @@ namespace ve {
         double sun_el = (PI/2.0) - std::acos(obs.normalize().dot(sun.normalize()));
         if (sun_el < (-6.0 * DEG2RAD)) return State::VISIBLE;
         return State::DAYLIGHT;
+    }
+
+    int VisibilityCalculator::checkFlare(const Vector3& sat_eci, const Vector3& obs_eci, const Vector3& sun_eci, double apogee_km) {
+        // 1. Check LEO (<1000 km)
+        if (apogee_km > 1000.0) return 0;
+
+        // 2. Check Observer Twilight (Sun Elevation < -12 deg)
+        // Angle between Obs and Sun
+        double angle_obs_sun = std::acos(obs_eci.normalize().dot(sun_eci.normalize()));
+        // Elevation = 90 - Angle
+        double sun_el_obs = (PI / 2.0) - angle_obs_sun;
+        if (sun_el_obs >= (-12.0 * DEG2RAD)) return 0; // Not dark enough
+
+        // 3. Mirror Geometry
+        // Normal points to Earth Center: N = -sat_eci.normalized()
+        Vector3 N = sat_eci.normalize() * -1.0;
+
+        // Incident Light Vector (Sun to Sat): I = (Sat - Sun).normalized()
+        Vector3 I = (sat_eci - sun_eci).normalize();
+
+        // Check if light hits the Nadir-facing surface
+        // Condition: I . N < 0 (Opposing vectors)
+        if (I.dot(N) >= 0) return 0; // Light hitting Zenith side
+
+        // Reflection Vector: R = I - 2(I . N)N
+        double dot_IN = I.dot(N);
+        Vector3 R = I - (N * (2.0 * dot_IN));
+
+        // Vector to Observer: V = (Obs - Sat).normalized()
+        Vector3 V = (obs_eci - sat_eci).normalize();
+
+        // Check Angle between Reflection and Observer
+        double dot_RV = R.normalize().dot(V);
+        if (dot_RV > 1.0) dot_RV = 1.0; // Clamp
+        if (dot_RV < -1.0) dot_RV = -1.0;
+
+        double angle_diff_rad = std::acos(dot_RV);
+        double angle_diff_deg = angle_diff_rad * RAD2DEG;
+
+        if (angle_diff_deg < 0.5) return 2; // HIT
+        if (angle_diff_deg < 1.0) return 1; // NEAR
+
+        return 0;
     }
 }

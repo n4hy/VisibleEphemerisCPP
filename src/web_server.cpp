@@ -61,6 +61,10 @@ namespace ve {
         .control-btn { padding: 5px 10px; background: #333; border: 1px solid #555; color: #fff; cursor: pointer; margin-left:5px; }
         .vis-YES { color: #0f0; font-weight: bold; } .vis-DAY { color: #ff0; } .vis-NO { color: #0ff; }
         .house-icon { font-size: 24px; text-align: center; text-shadow: 2px 2px 4px #000; }
+        @keyframes flash-yellow { 0% { fill-opacity: 1; fill: #ffff00; } 50% { fill-opacity: 0.2; fill: #ffff00; } 100% { fill-opacity: 1; fill: #ffff00; } }
+        @keyframes flash-fast { 0% { fill-opacity: 1; fill: #ffff00; } 50% { fill-opacity: 0; fill: #ff0000; } 100% { fill-opacity: 1; fill: #ffff00; } }
+        .flare-near { animation: flash-yellow 1s infinite; fill: #ffff00 !important; color: #ffff00 !important; }
+        .flare-hit { animation: flash-fast 0.2s infinite; fill: #ffff00 !important; color: #ffff00 !important; }
     </style>
 </head>
 <body>
@@ -163,8 +167,13 @@ namespace ve {
             lastData.forEach(s => {
                 var cls = (s.id===selectedId) ? 'active' : '';
                 var visCls = 'vis-' + s.v;
+                var displayName = s.n;
+                if (s.f > 0) {
+                    visCls = 'vis-DAY';
+                    displayName += " (F)";
+                }
                 html += `<tr class="${cls}" onclick="selectSat(${s.id})">
-                    <td>${s.n}</td><td>${s.a.toFixed(1)}</td><td>${s.e.toFixed(1)}</td><td>${s.next}</td><td class="${visCls}">${s.v}</td></tr>`;
+                    <td>${displayName}</td><td>${s.a.toFixed(1)}</td><td>${s.e.toFixed(1)}</td><td>${s.next}</td><td class="${visCls}">${s.v}</td></tr>`;
             });
             document.getElementById('sat-list').innerHTML = html;
             updateHeaders();
@@ -211,6 +220,13 @@ namespace ve {
                         ctx.strokeStyle='#ff00ff'; ctx.lineWidth=2; ctx.stroke(); ctx.restore();
                     }
                     var col = (s.v==="YES") ? "#0f0" : ((s.v==="DAY")?"#ff0":"#0ff");
+                    if (s.f > 0) {
+                        col = "#ffff00";
+                        var t_ms = Date.now();
+                        var period = (s.f === 2) ? 200 : 1000;
+                        if ((Math.floor(t_ms / (period/2)) % 2) === 0) col = "#444";
+                        else col = "#ffff00";
+                    }
                     ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x,y,5,0,2*Math.PI); ctx.fill();
                     ctx.fillStyle='#fff'; ctx.fillText(s.n, x+8, y+3);
                 });
@@ -276,7 +292,16 @@ namespace ve {
                 else { markers[s.id]=L.circleMarker([s.lat, s.lon], {color:'#0f0', radius:6, weight:1, fillColor:'#0f0', fillOpacity:0.9}).addTo(map).on('click', ()=>selectSat(s.id)); }
                 
                 var color = (s.v==="YES") ? "#00ff00" : ((s.v==="DAY")?"#ffff00":"#00ffff");
-                markers[s.id].setStyle({color:color, fillColor:color});
+                var cls = "";
+                if(s.f > 0) {
+                     color = "#ffff00";
+                     cls = (s.f === 2) ? "flare-hit" : "flare-near";
+                }
+                markers[s.id].setStyle({color:color, fillColor:color, className: cls});
+                // Force class update for SVG
+                if(markers[s.id].getElement()) {
+                    markers[s.id].getElement().setAttribute('class', 'leaflet-interactive ' + cls);
+                }
 
                 if(s.trail) { if(polylines[s.id]) polylines[s.id].setLatLngs(s.trail); else polylines[s.id]=L.polyline(s.trail, {color:'#0ff', weight:2, opacity:0.7, dashArray: '5,5'}).addTo(map); }
             });
@@ -330,7 +355,7 @@ namespace ve {
             const auto& r = rows[i];
             ss << "{\"id\":" << r.norad_id << ",\"n\":\"" << r.name << "\",\"lat\":" << r.lat << ",\"lon\":" << r.lon 
                << ",\"a\":" << r.az << ",\"e\":" << r.el << ",\"v\":\"" << (r.state==VisibilityCalculator::State::VISIBLE?"YES":(r.state==VisibilityCalculator::State::DAYLIGHT?"DAY":"NO")) 
-               << "\",\"next\":\"" << r.next_event << "\",\"apo\":" << r.apogee << "}";
+               << "\",\"next\":\"" << r.next_event << "\",\"apo\":" << r.apogee << ",\"f\":" << r.flare_status << "}";
             if(i < rows.size()-1) ss << ",";
         }
         ss << "]}"; 

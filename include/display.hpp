@@ -21,6 +21,7 @@ namespace ve {
         VisibilityCalculator::State state;
         int norad_id;
         std::string next_event; 
+        int flare_status; // 0=None, 1=Near (0.5-1.0 deg), 2=Hit (<0.5 deg)
     };
     class Display {
     public:

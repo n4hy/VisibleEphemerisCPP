@@ -213,6 +213,10 @@ int main(int argc, char* argv[]) {
                     }
 
                     auto state = VisibilityCalculator::calculateState(pos, observer.getPositionECI(now), now, look.elevation);
+                    int flare_status = 0;
+                    if (state == VisibilityCalculator::State::VISIBLE) {
+                        flare_status = VisibilityCalculator::checkFlare(pos, observer.getPositionECI(now), VisibilityCalculator::getSunPositionECI(now), sat.getApogeeKm());
+                    }
 
                     bool needs_update = sat.getPredictedPasses().empty() || sat.getFullTrackCopy().empty();
                     if (needs_update && !sat.is_computing.exchange(true)) {
@@ -238,7 +242,7 @@ int main(int argc, char* argv[]) {
                         }
                         
                     auto geo = sat.getGeodetic(now);
-                    local_rows.push_back({sat.getName(), look.azimuth, look.elevation, look.range, rrate, geo.lat_deg, geo.lon_deg, sat.getApogeeKm(), state, sat.getNoradId(), next_event_str});
+                    local_rows.push_back({sat.getName(), look.azimuth, look.elevation, look.range, rrate, geo.lat_deg, geo.lon_deg, sat.getApogeeKm(), state, sat.getNoradId(), next_event_str, flare_status});
                     local_sats.push_back(&sat);
                 }
                 

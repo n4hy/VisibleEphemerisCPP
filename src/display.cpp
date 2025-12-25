@@ -102,9 +102,12 @@ namespace ve {
             else if (r.state == VisibilityCalculator::State::ECLIPSED) state_str = "ECL";
             if (r.el < 0) state_str = "HOR";
 
+            std::string d_name = r.name.substr(0,14);
+            if (r.flare_status > 0) d_name += " F";
+
             const char* row_fmt = "%-15s %8.1f %8.1f %10.1f %8.3f %-5s %-12s";
             snprintf(buf, sizeof(buf), row_fmt, 
-                     r.name.substr(0,14).c_str(), r.az, r.el, r.range, r.range_rate, 
+                     d_name.c_str(), r.az, r.el, r.range, r.range_rate,
                      state_str.c_str(), r.next_event.c_str());
             ss << buf << "\n";
         }
@@ -144,7 +147,27 @@ namespace ve {
                     else if (r.state == VisibilityCalculator::State::ECLIPSED) { state_str = "ECL"; color=3; }
                 }
 
-                if (std::abs(r.el - min_el) < 1.0) {
+                std::string d_name = r.name.substr(0,14);
+
+                // FLARE LOGIC
+                if (r.flare_status > 0) {
+                    d_name += " F";
+                    // Only flash Red if flare is active.
+                    // Hit (2) = Fast Flash? Near (1) = Slow Flash?
+                    // User said "flashing red F".
+                    // We can reuse the flash_state or make a faster one.
+                    // Let's use standard flash for now, maybe override color to RED.
+                    if (r.flare_status == 2) {
+                        // HIT: Fast Flash
+                        long ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
+                        if ((ms / 200) % 2 == 0) color = 4; // RED
+                        else color = 3; // CYAN (or background?)
+                    } else {
+                        // NEAR: Slow Flash
+                        if (flash_state) color = 4; // RED
+                    }
+                } else if (std::abs(r.el - min_el) < 1.0) {
+                    // HORIZON FLASH
                     if (flash_state) color = 8; 
                     else color = 4;
                 }
@@ -153,7 +176,7 @@ namespace ve {
                 
                 attron(COLOR_PAIR(color));
                 mvprintw(start_y + i, 0, row_fmt, 
-                         r.name.substr(0,14).c_str(), r.az, r.el, r.range, r.range_rate, 
+                         d_name.c_str(), r.az, r.el, r.range, r.range_rate,
                          state_str.c_str(), r.next_event.c_str());
                 attroff(COLOR_PAIR(color));
                 clrtoeol(); 
