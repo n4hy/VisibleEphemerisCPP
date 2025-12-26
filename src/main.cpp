@@ -16,6 +16,7 @@
 #include "thread_pool.hpp"
 #include "logger.hpp"
 #include "rotator.hpp"
+#include "app_state.hpp"
 
 using namespace ve;
 
@@ -183,7 +184,7 @@ int main(int argc, char* argv[]) {
         else if (arg == "--trail_mins") { if (i+1 < argc) config.trail_length_mins = std::stoi(argv[++i]); }
         else if (arg == "--maxapo") { if (i+1 < argc) config.max_apo = std::stod(argv[++i]); }
         else if (arg == "--minel") { if (i+1 < argc) config.min_el = std::stod(argv[++i]); }
-        else if (arg == "--all") { config.show_all_visible = true; }
+        else if (arg == "--all") { config.radio_mode = true; }
         else if (arg == "--groupsel") { if (i+1 < argc) config.group_selection = argv[++i]; config.sat_selection = ""; } 
         else if (arg == "--satsel") { if (i+1 < argc) config.sat_selection = argv[++i]; } 
         else if (arg == "--radio") { config.radio_mode = true; }
@@ -403,7 +404,8 @@ int main(int argc, char* argv[]) {
                         
                     auto geo = sat.getGeodetic(now);
                     local_rows.push_back({sat.getName(), look.azimuth, look.elevation, look.range, rrate, geo.lat_deg, geo.lon_deg, sat.getApogeeKm(), state, sat.getNoradId(), next_event_str, flare_status});
-                    local_sats.push_back(&sat);
+                    // DO NOT push to local_sats yet. We are filtering/sorting local_rows first.
+                    // We must rebuild local_sats from local_rows after filtering to ensure synchronization.
                 }
                 
                 // DIAGNOSTICS: If empty list, report why
@@ -414,31 +416,52 @@ int main(int argc, char* argv[]) {
                 
                 if (!running) break;
 
-                // STABLE SORT: Prevents flickering when multiple sats have similar elevation/scores
+                // STABLE SORT: Prevents flickering
                 std::stable_sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
                 
-                // Enforce max_sats but PRESERVE Sun/Moon if present
+                // Enforce max_sats but PRESERVE Sun/Moon
                 size_t limit = (config.max_sats > 0) ? (size_t)config.max_sats : 5000;
 
                 if (local_rows.size() > limit) {
-                    // Find Sun/Moon
                     std::vector<DisplayRow> kept;
                     std::vector<DisplayRow> others;
                     kept.reserve(limit);
                     others.reserve(local_rows.size());
 
+                    // Prioritize Sun/Moon
                     for(const auto& r : local_rows) {
                         if (r.norad_id == -1 || r.norad_id == -2) kept.push_back(r);
                         else others.push_back(r);
                     }
-                    // Fill remaining slots
+                    // Fill remaining
                     for(const auto& r : others) {
                         if (kept.size() < limit) kept.push_back(r);
                         else break;
                     }
                     local_rows = kept;
-                    // Re-sort by Elevation for display (stable)
+                    // Re-sort final list
                     std::stable_sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
+                }
+
+                // REBUILD ACTIVE SATS POINTERS TO MATCH FILTERED ROWS
+                // This ensures WebServer JSON (which might use active_sats for details)
+                // and UI are perfectly synchronized.
+                local_sats.clear();
+                local_sats.reserve(local_rows.size());
+
+                // Create a lookup map for speed? Or just brute force?
+                // Brute force search in 'sats' for each 'row' is O(N*M). N=100, M=5000. 500,000 ops. Fine.
+                // Better: Create a map of ID -> Satellite* first.
+                // Even Better: We know 'sats' indices? No.
+                // Just iterate:
+                for(const auto& r : local_rows) {
+                    // Find sat with r.norad_id in 'sats'
+                    for(auto& s : sats) {
+                        if (s.getNoradId() == r.norad_id) {
+                            local_sats.push_back(&s);
+                            break;
+                        }
+                    }
                 }
 
                 {
@@ -491,7 +514,7 @@ int main(int argc, char* argv[]) {
                 }
             }
             
-            display.update(current_rows, observer, physics_now, sats.size(), current_rows.size(), config.show_all_visible, config.min_el, time_display_str);
+            display.update(current_rows, observer, physics_now, sats.size(), current_rows.size(), config.radio_mode, config.min_el, time_display_str);
             text_server.updateData(display.getLastFrame()); 
         }
 

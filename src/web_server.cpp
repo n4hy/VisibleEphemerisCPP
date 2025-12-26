@@ -356,7 +356,7 @@ namespace ve {
         Geodetic sun = VisibilityCalculator::getSunPositionGeo(t);
 
         ss << "{\"config\":{\"lat\":" << config.lat << ",\"lon\":" << config.lon << ",\"min_el\":" << config.min_el 
-           << ",\"max_apo\":" << config.max_apo << ",\"show_all\":" << (config.show_all_visible ? "true" : "false") 
+           << ",\"max_apo\":" << config.max_apo << ",\"show_all\":" << (config.radio_mode ? "true" : "false")
            << ",\"groups\":\"" << config.group_selection << "\","
            << "\"time\":\"" << time_str << "\","
            << "\"sun_lat\":" << sun.lat_deg << ",\"sun_lon\":" << sun.lon_deg << "},";
