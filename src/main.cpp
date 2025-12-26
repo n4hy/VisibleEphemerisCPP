@@ -202,6 +202,11 @@ int main(int argc, char* argv[]) {
         }
     }
     
+    // SUN & MOON OVERRIDE
+    // Ensure we track Sun (-1) and Moon (-2) regardless of filters, as UI expects them.
+    // However, they are usually filtered out by "max_sats" if not prioritized.
+    // Logic: TLEManager injects them. Main loop visibility filter might drop them.
+
     try {
         std::cout << "Initializing TLE Manager..." << std::endl;
         TLEManager tle_mgr("./tle_cache");
@@ -370,8 +375,26 @@ int main(int argc, char* argv[]) {
 
                 std::sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
                 
+                // Enforce max_sats but PRESERVE Sun/Moon if present
                 if (!config.show_all_visible) {
-                    if (local_rows.size() > (size_t)config.max_sats) local_rows.resize(config.max_sats);
+                    size_t limit = (size_t)config.max_sats;
+                    if (local_rows.size() > limit) {
+                        // Find Sun/Moon
+                        std::vector<DisplayRow> kept;
+                        std::vector<DisplayRow> others;
+                        for(const auto& r : local_rows) {
+                            if (r.norad_id == -1 || r.norad_id == -2) kept.push_back(r);
+                            else others.push_back(r);
+                        }
+                        // Fill remaining slots
+                        for(const auto& r : others) {
+                            if (kept.size() < limit) kept.push_back(r);
+                            else break;
+                        }
+                        local_rows = kept;
+                        // Re-sort by Elevation for display
+                        std::sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
+                    }
                 } else {
                     if (local_rows.size() > 5000) local_rows.resize(5000);
                 }
