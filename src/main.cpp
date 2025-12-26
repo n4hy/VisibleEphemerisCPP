@@ -92,10 +92,55 @@ int main(int argc, char* argv[]) {
                 }
                 // Interpret as Local Time (mktime)
                 t.tm_isdst = -1; // Let mktime determine DST
-                auto sim_tp = std::chrono::system_clock::from_time_t(std::mktime(&t));
+                std::tm t_input_copy = t; // Keep copy for offset calc
+
+                std::time_t utc_timestamp = std::mktime(&t); // Converts Local -> UTC Timestamp
+                auto sim_tp = std::chrono::system_clock::from_time_t(utc_timestamp);
+
+                // Calculate Manual Offset: (Simulated UTC - What it would be if Input was UTC)
+                // Actually, we want: Input Time - Displayed UTC Time
+                // Better: We calculated 'utc_timestamp'. If we display 'utc_timestamp' via gmtime, we get the UTC representation.
+                // We want to display the equivalent of 't_input_copy'.
+                // So we need an offset that, when added to 'utc_timestamp', yields a time_t that gmtime prints as 't_input_copy'.
+
+                // Let's assume input was UTC to get its "face value" as time_t
+                // Portable timegm replacement since we can't rely on timegm existing
+                std::tm tm_utc = t_input_copy;
+                // timegm is not standard C++, but we can use a trick or valid C logic if available.
+                // Or simplified: manual_offset = mktime(t) - mktime(gmtime(mktime(t))) ??? No.
+
+                // Safe approach:
+                // 1. We have 'utc_timestamp' (The actual point in time).
+                // 2. gmtime(&utc_timestamp) gives us the broken down UTC.
+                // 3. We want the display to match 't_input_copy'.
+                // 4. Determine difference in seconds between broken-down UTC and broken-down Input.
+
+                std::tm* true_utc_parts = std::gmtime(&utc_timestamp);
+
+                // Convert both to seconds from start of day to find difference (ignoring date wrap for a second, but need full diff)
+                // Easier: Use mktime on both, treating them as local, to find the delta?
+                // No, that brings timezone back in.
+
+                // Let's rely on the fact that mktime adjusted by 'offset'.
+                // offset = utc_timestamp - (timestamp if input was UTC).
+                // But we don't have "timestamp if input was UTC" easily without timegm.
+
+                // Let's use the raw difference between the resulting UTC struct and the Input struct.
+                // Since we want Display = Input.
+                // Display = GMTime(Timestamp + OFFSET).
+                // GMTime(Timestamp) = true_utc_parts.
+                // We want GMTime(Timestamp + OFFSET) = t_input_copy.
+                // So OFFSET ~= t_input_copy - true_utc_parts.
+
+                // We can approximate this by using mktime on both structs (treating both as local).
+                // The difference in resulting time_t's will match the difference in the structs.
+                std::time_t t_1 = std::mktime(&t_input_copy); // Already calculated as utc_timestamp, but re-do ensures consistency
+                std::time_t t_2 = std::mktime(true_utc_parts);
+                config.manual_time_offset = (long)std::difftime(t_1, t_2);
+
                 time_offset = std::chrono::duration_cast<std::chrono::seconds>(sim_tp - Clock::now());
                 sim_time = true;
-                Logger::log("Simulating Time (Local): " + t_str + " (Offset: " + std::to_string(time_offset.count()) + "s)");
+                Logger::log("Simulating Time (Local): " + t_str + " (Offset: " + std::to_string(time_offset.count()) + "s, DispOffset: " + std::to_string(config.manual_time_offset) + "s)");
             }
         }
         else if (arg == "--lat") { if (i+1 < argc) config.lat = std::stod(argv[++i]); }

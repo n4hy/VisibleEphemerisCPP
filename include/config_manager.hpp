@@ -13,13 +13,16 @@ namespace ve {
         int trail_length_mins = 5;
         bool show_all_visible = false;
         std::string group_selection = "active"; 
-        std::string sat_selection = ""; // NEW: Specific Satellite Names
+        std::string sat_selection = ""; // Specific Satellite Names
 
         // Rotator Settings
         bool rotator_enabled = false;
         std::string rotator_host = "localhost";
         int rotator_port = 4533;
         double rotator_min_el = 0.0;
+
+        // Runtime-Only: Time Offset for Display (Input Local vs UTC)
+        long manual_time_offset = 0;
     };
 
     class ConfigManager {

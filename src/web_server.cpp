@@ -351,9 +351,11 @@ namespace ve {
         std::stringstream ss;
         Geodetic sun = VisibilityCalculator::getSunPositionGeo(t);
 
-        std::time_t tt = Clock::to_time_t(t);
+        // Use manual offset (config.manual_time_offset) to reconstruct Local Time from UTC
+        std::time_t tt = Clock::to_time_t(t) + config.manual_time_offset;
         std::tm loc;
-        localtime_r(&tt, &loc);
+        gmtime_r(&tt, &loc); // Use gmtime because we manually shifted to "Local Epoch"
+
         char time_buf[64];
         std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S LOC", &loc);
 
