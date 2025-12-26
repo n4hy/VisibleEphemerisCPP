@@ -352,9 +352,10 @@ namespace ve {
         Geodetic sun = VisibilityCalculator::getSunPositionGeo(t);
 
         std::time_t tt = Clock::to_time_t(t);
-        std::tm* loc = std::localtime(&tt);
+        std::tm loc;
+        localtime_r(&tt, &loc);
         char time_buf[64];
-        std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S LOC", loc);
+        std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S LOC", &loc);
 
         ss << "{\"config\":{\"lat\":" << config.lat << ",\"lon\":" << config.lon << ",\"min_el\":" << config.min_el 
            << ",\"max_apo\":" << config.max_apo << ",\"show_all\":" << (config.show_all_visible ? "true" : "false") 

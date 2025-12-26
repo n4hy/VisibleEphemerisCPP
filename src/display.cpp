@@ -208,9 +208,10 @@ namespace ve {
 
     void Display::drawHeader(const Observer& obs, const TimePoint& t, int visible, int total, int kept) {
         std::time_t tt = Clock::to_time_t(t);
-        std::tm* loc_tm = std::localtime(&tt);
+        std::tm loc_tm_val;
+        localtime_r(&tt, &loc_tm_val);
         char time_buf[32];
-        std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S LOC", loc_tm);
+        std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S LOC", &loc_tm_val);
         
         attron(COLOR_PAIR(5));
         move(0,0);
