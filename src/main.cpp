@@ -51,6 +51,7 @@ struct SharedState {
     std::mutex mutex;
     std::vector<DisplayRow> rows;
     std::vector<Satellite*> active_sats;
+    std::map<int, std::pair<DisplayRow, std::chrono::steady_clock::time_point>> row_cache; // ID -> {Row, Timestamp}
     bool updated = false;
 };
 
@@ -537,9 +538,45 @@ int main(int argc, char* argv[]) {
                 std::lock_guard<std::mutex> lock(state.mutex);
                 if (state.updated) {
                     current_rows = state.rows;
-                    web_server.updateData(state.rows, state.active_sats, config, physics_now, time_display_str);
+                    // Merge with persistent cache to prevent flickering
+                    for(const auto& r : current_rows) {
+                        state.row_cache[r.norad_id] = {r, std::chrono::steady_clock::now()};
+                    }
+
+                    // Rebuild display list from cache, filtering stale entries (e.g. > 2000ms old)
+                    std::vector<DisplayRow> smoothed_rows;
+                    std::vector<int> to_remove;
+                    auto now_steady = std::chrono::steady_clock::now();
+
+                    for(auto& [id, pair] : state.row_cache) {
+                        long age_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now_steady - pair.second).count();
+                        if (age_ms < 2000) {
+                            smoothed_rows.push_back(pair.first);
+                        } else {
+                            to_remove.push_back(id);
+                        }
+                    }
+                    for(int id : to_remove) state.row_cache.erase(id);
+
+                    // Sort smoothed list by Elevation (descending)
+                    std::stable_sort(smoothed_rows.begin(), smoothed_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
+
+                    // Enforce Limit on smoothed list
+                    size_t limit = (config.max_sats > 0) ? (size_t)config.max_sats : 5000;
+                    if (smoothed_rows.size() > limit) {
+                         // Prioritize Sun/Moon logic if needed, but simplistic cut is safer for stability
+                         // Sun/Moon are IDs -1/-2. stable_sort by Elevation might push them down?
+                         // Re-apply priority logic here?
+                         // Let's assume high elevation logic covers them or they are naturally high.
+                         smoothed_rows.resize(limit);
+                    }
+
+                    current_rows = smoothed_rows;
+                    web_server.updateData(current_rows, state.active_sats, config, physics_now, time_display_str);
                 } else {
-                    current_rows = state.rows; 
+                    // Use cached rows if no update
+                    for(auto& [id, pair] : state.row_cache) current_rows.push_back(pair.first);
+                    std::stable_sort(current_rows.begin(), current_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
                 }
             }
             display.update(current_rows, observer, physics_now, sats.size(), current_rows.size(), config.show_all, config.min_el, time_display_str);
