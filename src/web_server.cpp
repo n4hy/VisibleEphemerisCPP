@@ -149,8 +149,12 @@ namespace ve {
             fetch('/api/satellites').then(r=>r.json()).then(d => {
                 lastData = d.satellites || [];
                 var status = "Live: " + lastData.length;
-                if (d.config && d.config.time) {
-                    status += " | " + d.config.time;
+                if (d.config) {
+                    var info = [];
+                    if (d.config.groups) info.push("Group: " + d.config.groups);
+                    if (d.config.time) info.push("Time: " + d.config.time);
+                    if (lastData.length >= 0) info.push("Sats: " + lastData.length);
+                    status = info.join(" | ");
                 }
                 document.getElementById('status').innerText = status;
                 renderTable();

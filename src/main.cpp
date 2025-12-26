@@ -266,6 +266,16 @@ int main(int argc, char* argv[]) {
                     AppConfig new_cfg = web_server.popPendingConfig();
                     if (new_cfg.group_selection != config.group_selection) {
                          Logger::log("Hot Reload: Switching groups to " + new_cfg.group_selection);
+
+                         // SAFETY: Clear active_sats pointers in SharedState BEFORE destroying sats vector.
+                         {
+                             std::lock_guard<std::mutex> lock(state.mutex);
+                             state.active_sats.clear();
+                             state.rows.clear();
+                             state.updated = false;
+                         }
+
+                         // Now safe to reallocate
                          sats = tle_mgr.loadGroups(new_cfg.group_selection);
                     }
                     config = new_cfg;
