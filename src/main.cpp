@@ -161,6 +161,19 @@ int main(int argc, char* argv[]) {
         else if (arg == "--no-visible") { config.show_all_visible = true; } 
     }
 
+    // If not simulating time, calculate default system offset for display
+    if (!sim_time) {
+        std::time_t now_c = std::time(nullptr);
+        std::tm local_tm;
+        // Use thread-safe localtime_r copy to get local broken-down time
+        localtime_r(&now_c, &local_tm);
+        // Calculate what this broken-down time would be if it were UTC (Face Value)
+        std::time_t local_face_value = timegm_portable(&local_tm);
+        // The difference is the offset we need to add to UTC to display Local Time
+        config.manual_time_offset = (long)std::difftime(local_face_value, now_c);
+        Logger::log("System Time Offset: " + std::to_string(config.manual_time_offset) + "s");
+    }
+
     // 3. AUTO-FIX CONFIG: If asking for GPS/GEO/GNSS or Specific Sats, disable Max Apo filter
     if (!config.sat_selection.empty() || 
         hasString(config.group_selection, "gps") || 
@@ -362,7 +375,7 @@ int main(int argc, char* argv[]) {
                 }
             }
             
-            display.update(current_rows, observer, Clock::now() + time_offset, sats.size(), current_rows.size(), config.show_all_visible, config.min_el);
+            display.update(current_rows, observer, Clock::now() + time_offset, sats.size(), current_rows.size(), config.show_all_visible, config.min_el, config.manual_time_offset);
             text_server.updateData(display.getLastFrame()); 
         }
 
