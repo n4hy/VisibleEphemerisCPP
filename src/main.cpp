@@ -19,6 +19,16 @@
 
 using namespace ve;
 
+// Helper to determine application state
+AppState determineState(const AppConfig& config) {
+    // If radio mode is explicitly enabled
+    if (config.radio_mode) {
+        return AppState::RADIO_TRACKING;
+    }
+    // Default to Optical
+    return AppState::OPTICAL_TRACKING;
+}
+
 void print_help() {
     std::cout << "Usage: ./VisibleEphemeris [OPTIONS]\n\n"
               << "Options:\n"
@@ -30,7 +40,8 @@ void print_help() {
               << "  --refresh        Force fresh TLE\n"
               << "  --groupsel <list> Comma-separated groups (e.g. \"amateur,weather,stations\")\n"
               << "  --satsel <list>   Comma-separated Satellite Names (Overrules groupsel)\n"
-              << "  --no-visible     Radio Mode: Show all sats > min_el (ignore light)\n"
+              << "  --radio          Enable Radio Mode (Show all visible, ignore shadow)\n"
+              << "  --optical        Enable Optical Mode (Hide eclipsed satellites)\n"
               << "  --time <str>     Simulate time (e.g. \"2025-01-01 12:00:00\")\n"
               << "\nConfiguration is loaded from config.yaml by default.\n";
 }
@@ -175,7 +186,9 @@ int main(int argc, char* argv[]) {
         else if (arg == "--all") { config.show_all_visible = true; }
         else if (arg == "--groupsel") { if (i+1 < argc) config.group_selection = argv[++i]; config.sat_selection = ""; } 
         else if (arg == "--satsel") { if (i+1 < argc) config.sat_selection = argv[++i]; } 
-        else if (arg == "--no-visible") { config.show_all_visible = true; } 
+        else if (arg == "--radio") { config.radio_mode = true; }
+        else if (arg == "--optical") { config.radio_mode = false; }
+        else if (arg == "--no-visible") { config.radio_mode = true; } // Legacy support
     }
 
     // If not simulating time, initialize default clocks
@@ -301,11 +314,18 @@ int main(int argc, char* argv[]) {
                 int rejected_vis = 0;
 
                 int selected_norad_id = web_server.getSelectedNoradId();
+                AppState current_state = determineState(config);
 
                 for(auto& sat : sats) {
                     if(!running) break;
                     
-                    // FILTER 1: APOGEE
+                    // 1. Common Pre-Filters (Applied to ALL modes)
+                    // Strict Decay Filter: Satellites below 80km are considered decayed/invalid
+                    if (sat.getApogeeKm() < 80.0) {
+                        continue;
+                    }
+
+                    // Filter 2: Max Apogee (User Configured)
                     if (config.max_apo > 0 && sat.getApogeeKm() > config.max_apo) {
                         rejected_apo++;
                         continue;
@@ -315,6 +335,12 @@ int main(int argc, char* argv[]) {
                     auto look = observer.calculateLookAngle(pos, now);
                     double rrate = observer.calculateRangeRate(pos, vel, now);
 
+                    // Filter 3: Min Elevation (User Configured)
+                    if (look.elevation < config.min_el) {
+                        rejected_el++;
+                        continue;
+                    }
+
                     // ROTATOR LOGIC
                     if (rotator && rotator->isConnected() && sat.getNoradId() == selected_norad_id) {
                         if (look.elevation >= config.rotator_min_el) {
@@ -322,16 +348,31 @@ int main(int argc, char* argv[]) {
                         }
                     }
 
-                    if (config.show_all_visible) {
-                        // Radio Mode: Show all
-                    } else {
-                        // Optical Mode:
-                        if (look.elevation < config.min_el) { rejected_el++; continue; }
-                        auto state = VisibilityCalculator::calculateState(pos, observer.getPositionECI(now), now, look.elevation);
-                        if (state != VisibilityCalculator::State::VISIBLE) { rejected_vis++; continue; }
+                    // STATE MACHINE: Visibility Logic
+                    auto state = VisibilityCalculator::calculateState(pos, observer.getPositionECI(now), now, look.elevation);
+                    bool include_sat = false;
+
+                    switch (current_state) {
+                        case AppState::RADIO_TRACKING:
+                            // Radio Mode: Include everything that passed MinEl and Apo filters
+                            // Ignore eclipse status.
+                            include_sat = true;
+                            break;
+
+                        case AppState::OPTICAL_TRACKING:
+                        default:
+                            // Optical Mode: Must be VISIBLE (Sunlit + Dark Sky)
+                            if (state == VisibilityCalculator::State::VISIBLE) {
+                                include_sat = true;
+                            } else {
+                                rejected_vis++;
+                            }
+                            break;
                     }
 
-                    auto state = VisibilityCalculator::calculateState(pos, observer.getPositionECI(now), now, look.elevation);
+                    if (!include_sat) continue;
+
+                    // Flare Calculation (Only relevant if visible, but calculate anyway for status)
                     int flare_status = 0;
                     if (state == VisibilityCalculator::State::VISIBLE) {
                         flare_status = VisibilityCalculator::checkFlare(pos, observer.getPositionECI(now), VisibilityCalculator::getSunPositionECI(now), sat.getApogeeKm());
@@ -373,17 +414,19 @@ int main(int argc, char* argv[]) {
                 
                 if (!running) break;
 
-                std::sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
+                // STABLE SORT: Prevents flickering when multiple sats have similar elevation/scores
+                std::stable_sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
                 
                 // Enforce max_sats but PRESERVE Sun/Moon if present
-                // If show_all_visible is TRUE (Radio Mode), we STILL respect max_sats if user set it (>0).
-                // Default hard limit is 5000 if max_sats is not set.
                 size_t limit = (config.max_sats > 0) ? (size_t)config.max_sats : 5000;
 
                 if (local_rows.size() > limit) {
                     // Find Sun/Moon
                     std::vector<DisplayRow> kept;
                     std::vector<DisplayRow> others;
+                    kept.reserve(limit);
+                    others.reserve(local_rows.size());
+
                     for(const auto& r : local_rows) {
                         if (r.norad_id == -1 || r.norad_id == -2) kept.push_back(r);
                         else others.push_back(r);
@@ -394,8 +437,8 @@ int main(int argc, char* argv[]) {
                         else break;
                     }
                     local_rows = kept;
-                    // Re-sort by Elevation for display
-                    std::sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
+                    // Re-sort by Elevation for display (stable)
+                    std::stable_sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
                 }
 
                 {

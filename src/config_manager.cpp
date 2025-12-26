@@ -64,7 +64,9 @@ namespace ve {
             }
             
             if (data.count("sat_selection")) cfg.sat_selection = data["sat_selection"];
-            if (data.count("show_all_visible")) cfg.show_all_visible = (data["show_all_visible"] == "true" || data["show_all_visible"] == "1");
+            if (data.count("radio_mode")) cfg.radio_mode = (data["radio_mode"] == "true" || data["radio_mode"] == "1");
+            // Backwards compatibility
+            if (data.count("show_all_visible")) cfg.radio_mode = (data["show_all_visible"] == "true" || data["show_all_visible"] == "1");
 
             // Rotator Settings
             if (data.count("rotator_enabled")) cfg.rotator_enabled = (data["rotator_enabled"] == "true" || data["rotator_enabled"] == "1");
@@ -88,7 +90,7 @@ namespace ve {
         file << "trail_length_mins: " << config.trail_length_mins << "\n";
         file << "group_selection: " << config.group_selection << "\n";
         file << "sat_selection: " << config.sat_selection << "\n";
-        file << "show_all_visible: " << (config.show_all_visible ? "true" : "false") << "\n";
+        file << "radio_mode: " << (config.radio_mode ? "true" : "false") << "\n";
 
         // Rotator Settings
         file << "rotator_enabled: " << (config.rotator_enabled ? "true" : "false") << "\n";
