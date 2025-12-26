@@ -52,6 +52,43 @@ bool hasString(const std::string& haystack, const std::string& needle) {
     return (it != haystack.end());
 }
 
+// Portable timegm implementation (UTC mktime)
+// Converts tm struct to time_t assuming UTC, ignoring tm_isdst
+std::time_t timegm_portable(struct tm* tm) {
+    if (!tm) return 0;
+
+    // Days in each month (non-leap)
+    static const int days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+    long year = tm->tm_year + 1900;
+    int month = tm->tm_mon; // 0-11
+
+    // Calculate total days from 1970
+    long days = 0;
+
+    // Add days for years
+    for (long y = 1970; y < year; ++y) {
+        bool is_leap = (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0));
+        days += is_leap ? 366 : 365;
+    }
+
+    // Add days for months in current year
+    bool current_leap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+    for (int m = 0; m < month; ++m) {
+        if (m == 1 && current_leap) days += 29;
+        else days += days_in_month[m];
+    }
+
+    days += (tm->tm_mday - 1);
+
+    std::time_t total_seconds = days * 86400;
+    total_seconds += tm->tm_hour * 3600;
+    total_seconds += tm->tm_min * 60;
+    total_seconds += tm->tm_sec;
+
+    return total_seconds;
+}
+
 int main(int argc, char* argv[]) {
     signal(SIGPIPE, SIG_IGN);
     
@@ -97,46 +134,14 @@ int main(int argc, char* argv[]) {
                 std::time_t utc_timestamp = std::mktime(&t); // Converts Local -> UTC Timestamp
                 auto sim_tp = std::chrono::system_clock::from_time_t(utc_timestamp);
 
-                // Calculate Manual Offset: (Simulated UTC - What it would be if Input was UTC)
-                // Actually, we want: Input Time - Displayed UTC Time
-                // Better: We calculated 'utc_timestamp'. If we display 'utc_timestamp' via gmtime, we get the UTC representation.
-                // We want to display the equivalent of 't_input_copy'.
-                // So we need an offset that, when added to 'utc_timestamp', yields a time_t that gmtime prints as 't_input_copy'.
+                // Calculate Manual Offset:
+                // Goal: Display Time == Input String Time.
+                // Logic: Display = gmtime(UTC_Timestamp + Manual_Offset)
+                // Therefore: Manual_Offset = timegm(Input) - UTC_Timestamp.
+                // This ensures Display = gmtime(timegm(Input)) = Input.
 
-                // Let's assume input was UTC to get its "face value" as time_t
-                // Portable timegm replacement since we can't rely on timegm existing
-                std::tm tm_utc = t_input_copy;
-                // timegm is not standard C++, but we can use a trick or valid C logic if available.
-                // Or simplified: manual_offset = mktime(t) - mktime(gmtime(mktime(t))) ??? No.
-
-                // Safe approach:
-                // 1. We have 'utc_timestamp' (The actual point in time).
-                // 2. gmtime(&utc_timestamp) gives us the broken down UTC.
-                // 3. We want the display to match 't_input_copy'.
-                // 4. Determine difference in seconds between broken-down UTC and broken-down Input.
-
-                std::tm* true_utc_parts = std::gmtime(&utc_timestamp);
-
-                // Convert both to seconds from start of day to find difference (ignoring date wrap for a second, but need full diff)
-                // Easier: Use mktime on both, treating them as local, to find the delta?
-                // No, that brings timezone back in.
-
-                // Let's rely on the fact that mktime adjusted by 'offset'.
-                // offset = utc_timestamp - (timestamp if input was UTC).
-                // But we don't have "timestamp if input was UTC" easily without timegm.
-
-                // Let's use the raw difference between the resulting UTC struct and the Input struct.
-                // Since we want Display = Input.
-                // Display = GMTime(Timestamp + OFFSET).
-                // GMTime(Timestamp) = true_utc_parts.
-                // We want GMTime(Timestamp + OFFSET) = t_input_copy.
-                // So OFFSET ~= t_input_copy - true_utc_parts.
-
-                // We can approximate this by using mktime on both structs (treating both as local).
-                // The difference in resulting time_t's will match the difference in the structs.
-                std::time_t t_1 = std::mktime(&t_input_copy); // Already calculated as utc_timestamp, but re-do ensures consistency
-                std::time_t t_2 = std::mktime(true_utc_parts);
-                config.manual_time_offset = (long)std::difftime(t_1, t_2);
+                std::time_t input_face_value_as_utc = timegm_portable(&t_input_copy);
+                config.manual_time_offset = (long)std::difftime(input_face_value_as_utc, utc_timestamp);
 
                 time_offset = std::chrono::duration_cast<std::chrono::seconds>(sim_tp - Clock::now());
                 sim_time = true;
