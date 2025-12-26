@@ -129,8 +129,21 @@ int main(int argc, char* argv[]) {
                 // ROBUST PARSING (sscanf)
                 int Y, M, D, h, m, s;
                 if (sscanf(t_str.c_str(), "%d-%d-%d %d:%d:%d", &Y, &M, &D, &h, &m, &s) != 6) {
-                    std::cerr << "Invalid time format. Use \"YYYY-MM-DD HH:MM:SS\"" << std::endl;
-                    return 1;
+                    // Try combining with next argument (handle unquoted date time)
+                    if (i+1 < argc) {
+                        std::string next_arg = argv[i+1];
+                        std::string combined = t_str + " " + next_arg;
+                        if (sscanf(combined.c_str(), "%d-%d-%d %d:%d:%d", &Y, &M, &D, &h, &m, &s) == 6) {
+                            t_str = combined;
+                            i++; // Consume extra argument
+                        } else {
+                            std::cerr << "Invalid time format. Use \"YYYY-MM-DD HH:MM:SS\"" << std::endl;
+                            return 1;
+                        }
+                    } else {
+                        std::cerr << "Invalid time format. Use \"YYYY-MM-DD HH:MM:SS\"" << std::endl;
+                        return 1;
+                    }
                 }
 
                 std::tm t = {};
