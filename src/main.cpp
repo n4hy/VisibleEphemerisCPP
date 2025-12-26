@@ -112,10 +112,10 @@ int main(int argc, char* argv[]) {
     std::chrono::seconds time_offset(0);
     bool sim_time = false;
 
-    // Critical: Use a local variable for display offset to prevent accidental overwrites
-    // by config reloads (which reset structs to defaults).
-    long manual_display_offset = 0;
-    std::time_t initial_input_face_value = 0; // For string construction logic
+    // DECOUPLED CLOCK VARIABLES
+    std::time_t display_epoch = 0;  // Start time (Face Value)
+    std::time_t physics_epoch = 0;  // Start time (System UTC)
+    auto system_start_tp = Clock::now(); // System Real Time Start Point
 
     // 2. Parse Arguments
     for(int i=1; i<argc; ++i) {
@@ -125,29 +125,31 @@ int main(int argc, char* argv[]) {
         else if (arg == "--time") {
             if (i+1 < argc) {
                 std::string t_str = argv[++i];
-                std::tm t = {};
-                std::stringstream ss(t_str);
-                ss >> std::get_time(&t, "%Y-%m-%d %H:%M:%S");
-                if (ss.fail()) {
+
+                // ROBUST PARSING (sscanf)
+                int Y, M, D, h, m, s;
+                if (sscanf(t_str.c_str(), "%d-%d-%d %d:%d:%d", &Y, &M, &D, &h, &m, &s) != 6) {
                     std::cerr << "Invalid time format. Use \"YYYY-MM-DD HH:MM:SS\"" << std::endl;
                     return 1;
                 }
-                // Interpret as Local Time (mktime)
-                t.tm_isdst = -1; // Let mktime determine DST
-                std::tm t_input_copy = t; // Keep copy for offset calc
 
-                std::time_t utc_timestamp = std::mktime(&t); // Converts Local -> UTC Timestamp
-                auto sim_tp = std::chrono::system_clock::from_time_t(utc_timestamp);
+                std::tm t = {};
+                t.tm_year = Y - 1900;
+                t.tm_mon = M - 1;
+                t.tm_mday = D;
+                t.tm_hour = h;
+                t.tm_min = m;
+                t.tm_sec = s;
+                t.tm_isdst = -1;
 
-                // Store the "Face Value" timestamp for direct string reconstruction
-                initial_input_face_value = timegm_portable(&t_input_copy);
+                // 1. Display Clock (Face Value)
+                display_epoch = timegm_portable(&t);
 
-                // Calculate offset for logging/debugging only, we will use face_value for display string
-                manual_display_offset = (long)std::difftime(initial_input_face_value, utc_timestamp);
+                // 2. Physics Clock (System Interpretation)
+                physics_epoch = std::mktime(&t);
 
-                time_offset = std::chrono::duration_cast<std::chrono::seconds>(sim_tp - Clock::now());
                 sim_time = true;
-                Logger::log("Simulating Time (Local): " + t_str + " (Offset: " + std::to_string(time_offset.count()) + "s, DispOffset: " + std::to_string(manual_display_offset) + "s)");
+                Logger::log("Simulating Time: " + t_str);
             }
         }
         else if (arg == "--lat") { if (i+1 < argc) config.lat = std::stod(argv[++i]); }
@@ -163,18 +165,16 @@ int main(int argc, char* argv[]) {
         else if (arg == "--no-visible") { config.show_all_visible = true; } 
     }
 
-    // If not simulating time, calculate default system offset for display
+    // If not simulating time, initialize default clocks
     if (!sim_time) {
         std::time_t now_c = std::time(nullptr);
+        physics_epoch = now_c; // Physics uses real time
+
+        // Display uses Local Face Value
         std::tm local_tm;
         localtime_r(&now_c, &local_tm);
-        std::time_t local_face_value = timegm_portable(&local_tm);
-        manual_display_offset = (long)std::difftime(local_face_value, now_c);
-        Logger::log("System Time Offset: " + std::to_string(manual_display_offset) + "s");
+        display_epoch = timegm_portable(&local_tm);
     }
-
-    // Keep config updated for legacy reasons
-    config.manual_time_offset = manual_display_offset;
 
     // 3. AUTO-FIX CONFIG: If asking for GPS/GEO/GNSS or Specific Sats, disable Max Apo filter
     if (!config.sat_selection.empty() || 
@@ -259,7 +259,12 @@ int main(int argc, char* argv[]) {
                     observer = Observer(config.lat, config.lon, config.alt); 
                 }
 
-                auto now = Clock::now() + time_offset;
+                // CALCULATE PHYSICS TIME (Decoupled)
+                auto elapsed_duration = Clock::now() - system_start_tp;
+                long elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(elapsed_duration).count();
+                std::time_t current_physics_time_t = physics_epoch + elapsed_sec;
+                auto now = std::chrono::system_clock::from_time_t(current_physics_time_t);
+
                 std::vector<DisplayRow> local_rows;
                 std::vector<Satellite*> local_sats;
                 
@@ -366,52 +371,39 @@ int main(int argc, char* argv[]) {
             if (input_res == Display::InputResult::SAVE_AND_QUIT) { config_mgr.save(config); running=false; break; }
             else if (input_res == Display::InputResult::QUIT_NO_SAVE) { running=false; break; }
 
-            std::vector<DisplayRow> current_rows;
-            auto current_now = Clock::now() + time_offset;
+            // CALCULATE CLOCKS
+            auto elapsed_duration = Clock::now() - system_start_tp;
+            long elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(elapsed_duration).count();
 
-            // CONSTRUCT DISPLAY STRING MANUALLY (Brute Force to satisfy requirement)
+            // 1. Physics Time (UTC-aligned)
+            std::time_t physics_tt = physics_epoch + elapsed_sec;
+            auto physics_now = std::chrono::system_clock::from_time_t(physics_tt);
+
+            // 2. Display Time (Face Value-aligned)
+            std::time_t display_tt = display_epoch + elapsed_sec;
+
+            // CONSTRUCT STRING
             std::string time_display_str;
             {
-                std::time_t raw_time = Clock::to_time_t(current_now);
-                std::time_t display_time_val;
-
-                if (sim_time) {
-                    // For Simulation: Use the initial "Face Value" + elapsed time since start
-                    // We need to track elapsed time relative to when we started?
-                    // Or simpler: current_now is (SystemTime + time_offset).
-                    // We know (SystemTime + time_offset) corresponds to 'utc_timestamp' in the setup block.
-                    // We want to display 'utc_timestamp' + 'manual_display_offset' face value.
-                    // YES: current_now is the correct Physical UTC.
-                    // We want to print (Physical UTC + Offset) as if it were UTC.
-                    display_time_val = raw_time + manual_display_offset;
-                } else {
-                    // For Real Time: Just use standard local time logic?
-                    // User wants "LOC".
-                    // Logic: display_time_val = raw_time + manual_display_offset (calculated at start).
-                    // Does offset drift? No, timezone offset is usually constant (ignoring DST changeover boundary).
-                    display_time_val = raw_time + manual_display_offset;
-                }
-
-                // Use gmtime on the "Shifted" time to get the face value structs
                 std::tm tm_display;
-                gmtime_r(&display_time_val, &tm_display);
-
+                gmtime_r(&display_tt, &tm_display);
                 char t_buf[64];
                 std::strftime(t_buf, sizeof(t_buf), "%Y-%m-%d %H:%M:%S LOC", &tm_display);
                 time_display_str = std::string(t_buf);
             }
 
+            std::vector<DisplayRow> current_rows;
             {
                 std::lock_guard<std::mutex> lock(state.mutex);
                 if (state.updated) {
                     current_rows = state.rows;
-                    web_server.updateData(state.rows, state.active_sats, config, current_now, time_display_str);
+                    web_server.updateData(state.rows, state.active_sats, config, physics_now, time_display_str);
                 } else {
                     current_rows = state.rows; 
                 }
             }
             
-            display.update(current_rows, observer, current_now, sats.size(), current_rows.size(), config.show_all_visible, config.min_el, time_display_str);
+            display.update(current_rows, observer, physics_now, sats.size(), current_rows.size(), config.show_all_visible, config.min_el, time_display_str);
             text_server.updateData(display.getLastFrame()); 
         }
 

@@ -335,9 +335,9 @@ namespace ve {
     void WebServer::start() { running_ = true; server_thread_ = std::thread(&WebServer::serverLoop, this); }
     void WebServer::runBlocking() { running_ = true; serverLoop(); }
     void WebServer::stop() { running_ = false; if (server_fd_ >= 0) { shutdown(server_fd_, SHUT_RDWR); close(server_fd_); server_fd_ = -1; } if(server_thread_.joinable()) server_thread_.join(); }
-    void WebServer::updateData(const std::vector<DisplayRow>& rows, const std::vector<Satellite*>& raw_sats, const AppConfig& config, const TimePoint& t) {
+    void WebServer::updateData(const std::vector<DisplayRow>& rows, const std::vector<Satellite*>& raw_sats, const AppConfig& config, const TimePoint& t, const std::string& time_str) {
         std::lock_guard<std::mutex> lock(data_mutex_);
-        current_json_data_ = buildJson(rows, raw_sats, config, t);
+        current_json_data_ = buildJson(rows, raw_sats, config, t, time_str);
         last_known_config_ = config;
     }
     bool WebServer::hasPendingConfig() { std::lock_guard<std::mutex> lock(config_mutex_); return config_changed_; }
