@@ -190,16 +190,38 @@ namespace ve {
     
     // REPEATING HELPER METHODS TO ENSURE FILE COMPLETENESS IN BUNDLE
     std::vector<Satellite> TLEManager::loadSpecificSats(const std::string& sat_names_csv) {
+        std::vector<Satellite> results;
+        std::vector<std::string> targets;
+        std::stringstream ss(sat_names_csv);
+        std::string seg;
+        while(std::getline(ss, seg, ',')) {
+            std::string c = trim(seg);
+            if(!c.empty()) {
+                std::transform(c.begin(), c.end(), c.begin(), ::toupper);
+                targets.push_back(c);
+            }
+        }
+
+        // SYNTHETIC OBJECTS: SUN (-1) and MOON (-2)
+        // If explicitly requested, add them.
+        for(const auto& t : targets) {
+            if (t == "SUN") {
+                // Dummy TLE for Sun (Logic handles -1 ID specially)
+                results.emplace_back("SUN",
+                    "1 00001U 00001A   00001.00000000  .00000000  00000-0  00000-0 0    12",
+                    "2 00001   0.0000   0.0000 0000000   0.0000   0.0000  0.00000000    15");
+            } else if (t == "MOON") {
+                // Dummy TLE for Moon (Logic handles -2 ID specially)
+                results.emplace_back("MOON",
+                    "1 00002U 00002A   00001.00000000  .00000000  00000-0  00000-0 0    13",
+                    "2 00002   0.0000   0.0000 0000000   0.0000   0.0000  0.00000000    16");
+            }
+        }
+
         std::string active_file = cache_dir_ + "/active.txt";
         if (!isCacheFresh(active_file)) {
             downloadFile("https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle", active_file);
         }
-        std::vector<std::string> targets;
-        std::stringstream ss(sat_names_csv);
-        std::string seg;
-        while(std::getline(ss, seg, ',')) { std::string c = trim(seg); if(!c.empty()) { std::transform(c.begin(), c.end(), c.begin(), ::toupper); targets.push_back(c); } }
-
-        std::vector<Satellite> results;
         std::ifstream file(active_file);
         std::string line, name, l1, l2;
         while (std::getline(file, line)) {

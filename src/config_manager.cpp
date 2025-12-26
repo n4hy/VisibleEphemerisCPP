@@ -64,12 +64,19 @@ namespace ve {
             }
             
             if (data.count("sat_selection")) cfg.sat_selection = data["sat_selection"];
-            if (data.count("radio_mode")) cfg.radio_mode = (data["radio_mode"] == "true" || data["radio_mode"] == "1");
-            // Backwards compatibility
-            if (data.count("show_all_visible")) cfg.radio_mode = (data["show_all_visible"] == "true" || data["show_all_visible"] == "1");
 
-            // Rotator Settings
-            if (data.count("rotator_enabled")) cfg.rotator_enabled = (data["rotator_enabled"] == "true" || data["rotator_enabled"] == "1");
+            // Visibility Setting (formerly radio_mode/show_all_visible)
+            if (data.count("show_all")) cfg.show_all = (data["show_all"] == "true" || data["show_all"] == "1");
+
+            // Hardware Control Settings
+            if (data.count("radio_control")) cfg.radio_control_enabled = (data["radio_control"] == "true" || data["radio_control"] == "1");
+            if (data.count("rotator_control")) cfg.rotator_control_enabled = (data["rotator_control"] == "true" || data["rotator_control"] == "1");
+
+            // Legacy Backwards Compatibility
+            if (data.count("show_all_visible")) cfg.show_all = (data["show_all_visible"] == "true" || data["show_all_visible"] == "1");
+            if (data.count("radio_mode")) cfg.show_all = (data["radio_mode"] == "true" || data["radio_mode"] == "1");
+            if (data.count("rotator_enabled")) cfg.rotator_control_enabled = (data["rotator_enabled"] == "true" || data["rotator_enabled"] == "1");
+
             if (data.count("rotator_host")) cfg.rotator_host = data["rotator_host"];
             if (data.count("rotator_port")) cfg.rotator_port = std::stoi(data["rotator_port"]);
             if (data.count("rotator_min_el")) cfg.rotator_min_el = std::stod(data["rotator_min_el"]);
@@ -90,10 +97,11 @@ namespace ve {
         file << "trail_length_mins: " << config.trail_length_mins << "\n";
         file << "group_selection: " << config.group_selection << "\n";
         file << "sat_selection: " << config.sat_selection << "\n";
-        file << "radio_mode: " << (config.radio_mode ? "true" : "false") << "\n";
+        file << "show_all: " << (config.show_all ? "true" : "false") << "\n";
 
-        // Rotator Settings
-        file << "rotator_enabled: " << (config.rotator_enabled ? "true" : "false") << "\n";
+        file << "radio_control: " << (config.radio_control_enabled ? "true" : "false") << "\n";
+        file << "rotator_control: " << (config.rotator_control_enabled ? "true" : "false") << "\n";
+
         file << "rotator_host: " << config.rotator_host << "\n";
         file << "rotator_port: " << config.rotator_port << "\n";
         file << "rotator_min_el: " << config.rotator_min_el << "\n";

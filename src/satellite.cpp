@@ -12,7 +12,12 @@ namespace ve {
         try {
             tle_object_ = std::make_unique<libsgp4::Tle>(name_, line1, line2);
             sgp4_object_ = std::make_unique<libsgp4::SGP4>(*tle_object_);
-            norad_id_ = static_cast<int>(tle_object_->NoradNumber());
+
+            // Allow override for synthetic objects
+            if (name_ == "SUN") norad_id_ = -1;
+            else if (name_ == "MOON") norad_id_ = -2;
+            else norad_id_ = static_cast<int>(tle_object_->NoradNumber());
+
         } catch (...) { norad_id_ = 0; }
     }
 

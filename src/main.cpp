@@ -22,9 +22,9 @@ using namespace ve;
 
 // Helper to determine application state
 AppState determineState(const AppConfig& config) {
-    // If radio mode is explicitly enabled
-    if (config.radio_mode) {
-        return AppState::RADIO_TRACKING;
+    // If visibility is "Show All" (show all visible regardless of light)
+    if (config.show_all) {
+        return AppState::RADIO_TRACKING; // Misnomer but keeps state logic consistent
     }
     // Default to Optical
     return AppState::OPTICAL_TRACKING;
@@ -184,12 +184,41 @@ int main(int argc, char* argv[]) {
         else if (arg == "--trail_mins") { if (i+1 < argc) config.trail_length_mins = std::stoi(argv[++i]); }
         else if (arg == "--maxapo") { if (i+1 < argc) config.max_apo = std::stod(argv[++i]); }
         else if (arg == "--minel") { if (i+1 < argc) config.min_el = std::stod(argv[++i]); }
-        else if (arg == "--all") { config.radio_mode = true; }
+        else if (arg == "--all") { config.show_all = true; } // --all means show all visible
         else if (arg == "--groupsel") { if (i+1 < argc) config.group_selection = argv[++i]; config.sat_selection = ""; } 
         else if (arg == "--satsel") { if (i+1 < argc) config.sat_selection = argv[++i]; } 
-        else if (arg == "--radio") { config.radio_mode = true; }
-        else if (arg == "--optical") { config.radio_mode = false; }
-        else if (arg == "--no-visible") { config.radio_mode = true; } // Legacy support
+
+        // HARDWARE CONTROL FLAGS (Requires Argument)
+        else if (arg == "--radio") {
+            if (i+1 < argc) {
+                std::string val = argv[++i];
+                config.radio_control_enabled = (val == "true" || val == "1");
+            }
+        }
+        else if (arg == "--rotator") {
+            if (i+1 < argc) {
+                std::string val = argv[++i];
+                config.rotator_control_enabled = (val == "true" || val == "1");
+            }
+        }
+        else if (arg == "--optical") { config.show_all = false; }
+        // --no-visible is removed as per request
+    }
+
+    // ENFORCE CONTROL LOGIC: Disable hardware if >1 satellite selected
+    if (config.radio_control_enabled || config.rotator_control_enabled) {
+        if (config.sat_selection.empty() || config.sat_selection.find(',') != std::string::npos ||
+            config.sat_selection == "SUN" || config.sat_selection == "MOON") {
+             // Exception: "SUN" and "MOON" are single objects but handled specially?
+             // TLEManager::loadSpecificSats handles commas. If empty, it's a group.
+             // If config.sat_selection is empty (group mode), DISABLE control.
+             // If comma exists, DISABLE control.
+             if (config.sat_selection.empty() || config.sat_selection.find(',') != std::string::npos) {
+                 std::cerr << "[WARN] Radio/Rotator control disabled: Must select exactly one satellite via --satsel." << std::endl;
+                 config.radio_control_enabled = false;
+                 config.rotator_control_enabled = false;
+             }
+        }
     }
 
     // If not simulating time, initialize default clocks
@@ -513,8 +542,7 @@ int main(int argc, char* argv[]) {
                     current_rows = state.rows; 
                 }
             }
-            
-            display.update(current_rows, observer, physics_now, sats.size(), current_rows.size(), config.radio_mode, config.min_el, time_display_str);
+            display.update(current_rows, observer, physics_now, sats.size(), current_rows.size(), config.show_all, config.min_el, time_display_str);
             text_server.updateData(display.getLastFrame()); 
         }
 

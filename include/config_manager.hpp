@@ -11,12 +11,14 @@ namespace ve {
         double min_el = 0.0;
         double max_apo = -1.0;
         int trail_length_mins = 5;
-        bool radio_mode = false; // Formerly show_all_visible
+        bool show_all = false; // Visibility: Show all above horizon (ignore eclipse)
         std::string group_selection = "active"; 
         std::string sat_selection = ""; // Specific Satellite Names
 
-        // Rotator Settings
-        bool rotator_enabled = false;
+        // Hardware Control Settings
+        bool radio_control_enabled = false;
+        bool rotator_control_enabled = false;
+
         std::string rotator_host = "localhost";
         int rotator_port = 4533;
         double rotator_min_el = 0.0;
