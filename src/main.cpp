@@ -112,6 +112,10 @@ int main(int argc, char* argv[]) {
     std::chrono::seconds time_offset(0);
     bool sim_time = false;
 
+    // Critical: Use a local variable for display offset to prevent accidental overwrites
+    // by config reloads (which reset structs to defaults).
+    long manual_display_offset = 0;
+
     // 2. Parse Arguments
     for(int i=1; i<argc; ++i) {
         std::string arg = argv[i];
@@ -141,11 +145,11 @@ int main(int argc, char* argv[]) {
                 // This ensures Display = gmtime(timegm(Input)) = Input.
 
                 std::time_t input_face_value_as_utc = timegm_portable(&t_input_copy);
-                config.manual_time_offset = (long)std::difftime(input_face_value_as_utc, utc_timestamp);
+                manual_display_offset = (long)std::difftime(input_face_value_as_utc, utc_timestamp);
 
                 time_offset = std::chrono::duration_cast<std::chrono::seconds>(sim_tp - Clock::now());
                 sim_time = true;
-                Logger::log("Simulating Time (Local): " + t_str + " (Offset: " + std::to_string(time_offset.count()) + "s, DispOffset: " + std::to_string(config.manual_time_offset) + "s)");
+                Logger::log("Simulating Time (Local): " + t_str + " (Offset: " + std::to_string(time_offset.count()) + "s, DispOffset: " + std::to_string(manual_display_offset) + "s)");
             }
         }
         else if (arg == "--lat") { if (i+1 < argc) config.lat = std::stod(argv[++i]); }
@@ -170,9 +174,12 @@ int main(int argc, char* argv[]) {
         // Calculate what this broken-down time would be if it were UTC (Face Value)
         std::time_t local_face_value = timegm_portable(&local_tm);
         // The difference is the offset we need to add to UTC to display Local Time
-        config.manual_time_offset = (long)std::difftime(local_face_value, now_c);
-        Logger::log("System Time Offset: " + std::to_string(config.manual_time_offset) + "s");
+        manual_display_offset = (long)std::difftime(local_face_value, now_c);
+        Logger::log("System Time Offset: " + std::to_string(manual_display_offset) + "s");
     }
+
+    // Keep config updated for WebServer (though main loop uses local var)
+    config.manual_time_offset = manual_display_offset;
 
     // 3. AUTO-FIX CONFIG: If asking for GPS/GEO/GNSS or Specific Sats, disable Max Apo filter
     if (!config.sat_selection.empty() || 
@@ -375,7 +382,7 @@ int main(int argc, char* argv[]) {
                 }
             }
             
-            display.update(current_rows, observer, Clock::now() + time_offset, sats.size(), current_rows.size(), config.show_all_visible, config.min_el, config.manual_time_offset);
+            display.update(current_rows, observer, Clock::now() + time_offset, sats.size(), current_rows.size(), config.show_all_visible, config.min_el, manual_display_offset);
             text_server.updateData(display.getLastFrame()); 
         }
 
