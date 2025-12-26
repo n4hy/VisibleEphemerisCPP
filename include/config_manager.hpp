@@ -11,7 +11,7 @@ namespace ve {
         double min_el = 0.0;
         double max_apo = -1.0;
         int trail_length_mins = 5;
-        bool show_all = false; // Visibility: Show all above horizon (ignore eclipse)
+        bool visible_only = false; // true = Show ONLY Visible; false = Show All (subject to other filters)
         std::string group_selection = "active"; 
         std::string sat_selection = ""; // Specific Satellite Names
 

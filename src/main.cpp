@@ -16,19 +16,8 @@
 #include "thread_pool.hpp"
 #include "logger.hpp"
 #include "rotator.hpp"
-#include "app_state.hpp"
 
 using namespace ve;
-
-// Helper to determine application state
-AppState determineState(const AppConfig& config) {
-    // If visibility is "Show All" (show all visible regardless of light)
-    if (config.show_all) {
-        return AppState::RADIO_TRACKING; // Misnomer but keeps state logic consistent
-    }
-    // Default to Optical
-    return AppState::OPTICAL_TRACKING;
-}
 
 void print_help() {
     std::cout << "Usage: ./VisibleEphemeris [OPTIONS]\n\n"
@@ -41,8 +30,7 @@ void print_help() {
               << "  --refresh        Force fresh TLE\n"
               << "  --groupsel <list> Comma-separated groups (e.g. \"amateur,weather,stations\")\n"
               << "  --satsel <list>   Comma-separated Satellite Names (Overrules groupsel)\n"
-              << "  --radio          Enable Radio Mode (Show all visible, ignore shadow)\n"
-              << "  --optical        Enable Optical Mode (Hide eclipsed satellites)\n"
+              << "  --visible <bool> Limit to Optically Visible only (true/false)\n"
               << "  --time <str>     Simulate time (e.g. \"2025-01-01 12:00:00\")\n"
               << "\nConfiguration is loaded from config.yaml by default.\n";
 }
@@ -51,7 +39,6 @@ struct SharedState {
     std::mutex mutex;
     std::vector<DisplayRow> rows;
     std::vector<Satellite*> active_sats;
-    std::map<int, std::pair<DisplayRow, std::chrono::steady_clock::time_point>> row_cache; // ID -> {Row, Timestamp}
     bool updated = false;
 };
 
@@ -185,9 +172,14 @@ int main(int argc, char* argv[]) {
         else if (arg == "--trail_mins") { if (i+1 < argc) config.trail_length_mins = std::stoi(argv[++i]); }
         else if (arg == "--maxapo") { if (i+1 < argc) config.max_apo = std::stod(argv[++i]); }
         else if (arg == "--minel") { if (i+1 < argc) config.min_el = std::stod(argv[++i]); }
-        else if (arg == "--all") { config.show_all = true; } // --all means show all visible
         else if (arg == "--groupsel") { if (i+1 < argc) config.group_selection = argv[++i]; config.sat_selection = ""; } 
         else if (arg == "--satsel") { if (i+1 < argc) config.sat_selection = argv[++i]; } 
+        else if (arg == "--visible" || arg == "-visible") {
+            if (i+1 < argc) {
+                std::string val = argv[++i];
+                config.visible_only = (val == "true" || val == "1");
+            }
+        }
 
         // HARDWARE CONTROL FLAGS (Requires Argument)
         else if (arg == "--radio") {
@@ -202,8 +194,6 @@ int main(int argc, char* argv[]) {
                 config.rotator_control_enabled = (val == "true" || val == "1");
             }
         }
-        else if (arg == "--optical") { config.show_all = false; }
-        // --no-visible is removed as per request
     }
 
     // ENFORCE CONTROL LOGIC: Disable hardware if >1 satellite selected
@@ -345,20 +335,12 @@ int main(int argc, char* argv[]) {
                 int rejected_vis = 0;
 
                 int selected_norad_id = web_server.getSelectedNoradId();
-                AppState current_state = determineState(config);
 
                 for(auto& sat : sats) {
                     if(!running) break;
                     
-                    // 1. Common Pre-Filters (Applied to ALL modes)
-                    // Strict Decay Filter: Satellites below 80km are considered decayed/invalid
+                    // 1. Strict Decay Filter: Satellites below 80km are considered decayed/invalid
                     if (sat.getApogeeKm() < 80.0) {
-                        continue;
-                    }
-
-                    // Filter 2: Max Apogee (User Configured)
-                    if (config.max_apo > 0 && sat.getApogeeKm() > config.max_apo) {
-                        rejected_apo++;
                         continue;
                     }
 
@@ -366,42 +348,36 @@ int main(int argc, char* argv[]) {
                     auto look = observer.calculateLookAngle(pos, now);
                     double rrate = observer.calculateRangeRate(pos, vel, now);
 
-                    // Filter 3: Min Elevation (User Configured)
-                    if (look.elevation < config.min_el) {
-                        rejected_el++;
-                        continue;
-                    }
-
-                    // ROTATOR LOGIC
+                    // ROTATOR LOGIC (Always run for selected sat, regardless of display filters)
                     if (rotator && rotator->isConnected() && sat.getNoradId() == selected_norad_id) {
                         if (look.elevation >= config.rotator_min_el) {
                             rotator->setPosition(look.azimuth, look.elevation);
                         }
                     }
 
-                    // STATE MACHINE: Visibility Logic
+                    // 2. Visibility Calculation
                     auto state = VisibilityCalculator::calculateState(pos, observer.getPositionECI(now), now, look.elevation);
-                    bool include_sat = false;
 
-                    switch (current_state) {
-                        case AppState::RADIO_TRACKING:
-                            // Radio Mode: Include everything that passed MinEl and Apo filters
-                            // Ignore eclipse status.
-                            include_sat = true;
-                            break;
+                    // 3. User Filters
 
-                        case AppState::OPTICAL_TRACKING:
-                        default:
-                            // Optical Mode: Must be VISIBLE (Sunlit + Dark Sky)
-                            if (state == VisibilityCalculator::State::VISIBLE) {
-                                include_sat = true;
-                            } else {
-                                rejected_vis++;
-                            }
-                            break;
+                    // VISIBILITY FILTER
+                    // If visible_only is TRUE, we skip if NOT visible.
+                    if (config.visible_only && state != VisibilityCalculator::State::VISIBLE) {
+                        rejected_vis++;
+                        continue;
                     }
 
-                    if (!include_sat) continue;
+                    // MIN ELEVATION FILTER
+                    if (look.elevation < config.min_el) {
+                        rejected_el++;
+                        continue;
+                    }
+
+                    // MAX APOGEE FILTER
+                    if (config.max_apo > 0 && sat.getApogeeKm() > config.max_apo) {
+                        rejected_apo++;
+                        continue;
+                    }
 
                     // Flare Calculation (Only relevant if visible, but calculate anyway for status)
                     int flare_status = 0;
@@ -536,50 +512,12 @@ int main(int argc, char* argv[]) {
             std::vector<DisplayRow> current_rows;
             {
                 std::lock_guard<std::mutex> lock(state.mutex);
+                current_rows = state.rows;
                 if (state.updated) {
-                    current_rows = state.rows;
-                    // Merge with persistent cache to prevent flickering
-                    for(const auto& r : current_rows) {
-                        state.row_cache[r.norad_id] = {r, std::chrono::steady_clock::now()};
-                    }
-
-                    // Rebuild display list from cache, filtering stale entries (e.g. > 2000ms old)
-                    std::vector<DisplayRow> smoothed_rows;
-                    std::vector<int> to_remove;
-                    auto now_steady = std::chrono::steady_clock::now();
-
-                    for(auto& [id, pair] : state.row_cache) {
-                        long age_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now_steady - pair.second).count();
-                        if (age_ms < 2000) {
-                            smoothed_rows.push_back(pair.first);
-                        } else {
-                            to_remove.push_back(id);
-                        }
-                    }
-                    for(int id : to_remove) state.row_cache.erase(id);
-
-                    // Sort smoothed list by Elevation (descending)
-                    std::stable_sort(smoothed_rows.begin(), smoothed_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
-
-                    // Enforce Limit on smoothed list
-                    size_t limit = (config.max_sats > 0) ? (size_t)config.max_sats : 5000;
-                    if (smoothed_rows.size() > limit) {
-                         // Prioritize Sun/Moon logic if needed, but simplistic cut is safer for stability
-                         // Sun/Moon are IDs -1/-2. stable_sort by Elevation might push them down?
-                         // Re-apply priority logic here?
-                         // Let's assume high elevation logic covers them or they are naturally high.
-                         smoothed_rows.resize(limit);
-                    }
-
-                    current_rows = smoothed_rows;
                     web_server.updateData(current_rows, state.active_sats, config, physics_now, time_display_str);
-                } else {
-                    // Use cached rows if no update
-                    for(auto& [id, pair] : state.row_cache) current_rows.push_back(pair.first);
-                    std::stable_sort(current_rows.begin(), current_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
                 }
             }
-            display.update(current_rows, observer, physics_now, sats.size(), current_rows.size(), config.show_all, config.min_el, time_display_str);
+            display.update(current_rows, observer, physics_now, sats.size(), current_rows.size(), !config.visible_only, config.min_el, time_display_str);
             text_server.updateData(display.getLastFrame()); 
         }
 

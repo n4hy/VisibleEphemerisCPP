@@ -65,16 +65,21 @@ namespace ve {
             
             if (data.count("sat_selection")) cfg.sat_selection = data["sat_selection"];
 
-            // Visibility Setting (formerly radio_mode/show_all_visible)
-            if (data.count("show_all")) cfg.show_all = (data["show_all"] == "true" || data["show_all"] == "1");
+            // Visibility Setting (New: visible_only)
+            if (data.count("visible_only")) cfg.visible_only = (data["visible_only"] == "true" || data["visible_only"] == "1");
 
             // Hardware Control Settings
             if (data.count("radio_control")) cfg.radio_control_enabled = (data["radio_control"] == "true" || data["radio_control"] == "1");
             if (data.count("rotator_control")) cfg.rotator_control_enabled = (data["rotator_control"] == "true" || data["rotator_control"] == "1");
 
-            // Legacy Backwards Compatibility
-            if (data.count("show_all_visible")) cfg.show_all = (data["show_all_visible"] == "true" || data["show_all_visible"] == "1");
-            if (data.count("radio_mode")) cfg.show_all = (data["radio_mode"] == "true" || data["radio_mode"] == "1");
+            // Legacy Backwards Compatibility:
+            // "show_all_visible" meant "Radio Mode" (Show All).
+            // So if show_all_visible=true -> visible_only=false.
+            // If show_all_visible=false -> visible_only=true (default optical).
+            if (data.count("show_all")) cfg.visible_only = !(data["show_all"] == "true" || data["show_all"] == "1");
+            if (data.count("show_all_visible")) cfg.visible_only = !(data["show_all_visible"] == "true" || data["show_all_visible"] == "1");
+            if (data.count("radio_mode")) cfg.visible_only = !(data["radio_mode"] == "true" || data["radio_mode"] == "1");
+
             if (data.count("rotator_enabled")) cfg.rotator_control_enabled = (data["rotator_enabled"] == "true" || data["rotator_enabled"] == "1");
 
             if (data.count("rotator_host")) cfg.rotator_host = data["rotator_host"];
@@ -97,7 +102,7 @@ namespace ve {
         file << "trail_length_mins: " << config.trail_length_mins << "\n";
         file << "group_selection: " << config.group_selection << "\n";
         file << "sat_selection: " << config.sat_selection << "\n";
-        file << "show_all: " << (config.show_all ? "true" : "false") << "\n";
+        file << "visible_only: " << (config.visible_only ? "true" : "false") << "\n";
 
         file << "radio_control: " << (config.radio_control_enabled ? "true" : "false") << "\n";
         file << "rotator_control: " << (config.rotator_control_enabled ? "true" : "false") << "\n";
