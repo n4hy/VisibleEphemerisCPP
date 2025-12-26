@@ -376,27 +376,26 @@ int main(int argc, char* argv[]) {
                 std::sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
                 
                 // Enforce max_sats but PRESERVE Sun/Moon if present
-                if (!config.show_all_visible) {
-                    size_t limit = (size_t)config.max_sats;
-                    if (local_rows.size() > limit) {
-                        // Find Sun/Moon
-                        std::vector<DisplayRow> kept;
-                        std::vector<DisplayRow> others;
-                        for(const auto& r : local_rows) {
-                            if (r.norad_id == -1 || r.norad_id == -2) kept.push_back(r);
-                            else others.push_back(r);
-                        }
-                        // Fill remaining slots
-                        for(const auto& r : others) {
-                            if (kept.size() < limit) kept.push_back(r);
-                            else break;
-                        }
-                        local_rows = kept;
-                        // Re-sort by Elevation for display
-                        std::sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
+                // If show_all_visible is TRUE (Radio Mode), we STILL respect max_sats if user set it (>0).
+                // Default hard limit is 5000 if max_sats is not set.
+                size_t limit = (config.max_sats > 0) ? (size_t)config.max_sats : 5000;
+
+                if (local_rows.size() > limit) {
+                    // Find Sun/Moon
+                    std::vector<DisplayRow> kept;
+                    std::vector<DisplayRow> others;
+                    for(const auto& r : local_rows) {
+                        if (r.norad_id == -1 || r.norad_id == -2) kept.push_back(r);
+                        else others.push_back(r);
                     }
-                } else {
-                    if (local_rows.size() > 5000) local_rows.resize(5000);
+                    // Fill remaining slots
+                    for(const auto& r : others) {
+                        if (kept.size() < limit) kept.push_back(r);
+                        else break;
+                    }
+                    local_rows = kept;
+                    // Re-sort by Elevation for display
+                    std::sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
                 }
 
                 {

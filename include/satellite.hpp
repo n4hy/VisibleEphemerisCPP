@@ -41,6 +41,7 @@ namespace ve {
         int norad_id_;
         std::unique_ptr<libsgp4::Tle> tle_object_;
         std::unique_ptr<libsgp4::SGP4> sgp4_object_;
+        // Mutex for thread-safe access to SGP4 and cached data
         mutable std::mutex sat_mutex_;
         std::vector<Geodetic> full_track_; 
         std::vector<PassEvent> predicted_passes_;
