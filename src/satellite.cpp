@@ -54,6 +54,7 @@ namespace ve {
     std::pair<Vector3, Vector3> Satellite::propagate(const TimePoint& t) const {
         if (!sgp4_object_) return {{0,0,0},{0,0,0}};
         try {
+            std::lock_guard<std::mutex> lock(sat_mutex_);
             std::time_t tt = Clock::to_time_t(t);
             std::tm* gmt = std::gmtime(&tt);
             libsgp4::DateTime dt(gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec);
@@ -66,6 +67,7 @@ namespace ve {
     Geodetic Satellite::getGeodetic(const TimePoint& t) const {
         if (!sgp4_object_) return {0,0,0};
         try {
+            std::lock_guard<std::mutex> lock(sat_mutex_);
             std::time_t tt = Clock::to_time_t(t);
             std::tm* gmt = std::gmtime(&tt);
             libsgp4::DateTime dt(gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec);
