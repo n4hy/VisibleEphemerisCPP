@@ -294,7 +294,7 @@ int main(int argc, char* argv[]) {
         PassPredictor predictor(observer);
         
         std::unique_ptr<Rotator> rotator;
-        if (config.rotator_enabled) {
+        if (config.rotator_control_enabled) {
             rotator = std::make_unique<Rotator>(config.rotator_host, config.rotator_port);
         }
         
