@@ -347,22 +347,14 @@ namespace ve {
         return selected_norad_id_.load();
     }
 
-    std::string WebServer::buildJson(const std::vector<DisplayRow>& rows, const std::vector<Satellite*>& raw_sats, const AppConfig& config, const TimePoint& t) {
+    std::string WebServer::buildJson(const std::vector<DisplayRow>& rows, const std::vector<Satellite*>& raw_sats, const AppConfig& config, const TimePoint& t, const std::string& time_str) {
         std::stringstream ss;
         Geodetic sun = VisibilityCalculator::getSunPositionGeo(t);
-
-        // Use manual offset (config.manual_time_offset) to reconstruct Local Time from UTC
-        std::time_t tt = Clock::to_time_t(t) + config.manual_time_offset;
-        std::tm loc;
-        gmtime_r(&tt, &loc); // Use gmtime because we manually shifted to "Local Epoch"
-
-        char time_buf[64];
-        std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S LOC", &loc);
 
         ss << "{\"config\":{\"lat\":" << config.lat << ",\"lon\":" << config.lon << ",\"min_el\":" << config.min_el 
            << ",\"max_apo\":" << config.max_apo << ",\"show_all\":" << (config.show_all_visible ? "true" : "false") 
            << ",\"groups\":\"" << config.group_selection << "\","
-           << "\"time\":\"" << time_buf << "\","
+           << "\"time\":\"" << time_str << "\","
            << "\"sun_lat\":" << sun.lat_deg << ",\"sun_lon\":" << sun.lon_deg << "},";
         ss << "\"satellites\":[";
         for(size_t i=0; i<rows.size(); ++i) {

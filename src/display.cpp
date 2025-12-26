@@ -60,15 +60,14 @@ namespace ve {
         return InputResult::NONE;
     }
     
-    void Display::update(const std::vector<DisplayRow>& rows, const Observer& obs, const TimePoint& t, int total_tracked, int filter_kept, bool show_all_rf, double min_el, long manual_offset) {
+    void Display::update(const std::vector<DisplayRow>& rows, const Observer& obs, const TimePoint& t, int total_tracked, int filter_kept, bool show_all_rf, double min_el, const std::string& time_str) {
         std::stringstream ss; 
         
-        drawHeader(obs, t, rows.size(), total_tracked, filter_kept, manual_offset);
+        drawHeader(obs, rows.size(), total_tracked, filter_kept, time_str);
         
-        std::time_t tt = Clock::to_time_t(t) + manual_offset;
-        std::tm* loc_tm = std::gmtime(&tt); // Treat manually adjusted time as UTC to display the "local" value
+        std::time_t tt = Clock::to_time_t(t);
         ss << "VISIBLE EPHEMERIS v12.65-CODE-ONLY\n";
-        ss << std::put_time(loc_tm, "%Y-%m-%d %H:%M:%S LOC") << "\n";
+        ss << time_str << "\n";
         auto loc = obs.getLocation();
         ss << "OBS: " << loc.lat_deg << ", " << loc.lon_deg << " | SHOWN: " << rows.size() << "\n\n";
 
@@ -206,22 +205,12 @@ namespace ve {
         attroff(COLOR_PAIR(6));
     }
 
-    void Display::drawHeader(const Observer& obs, const TimePoint& t, int visible, int total, int kept, long manual_offset) {
-        std::time_t tt = Clock::to_time_t(t) + manual_offset;
-        std::tm loc_tm_val;
-
-        // Use gmtime_r because we manually shifted the time to the "Local" epoch
-        // so we want to print the register values as-is (UTC).
-        gmtime_r(&tt, &loc_tm_val);
-
-        char time_buf[32];
-        std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S LOC", &loc_tm_val);
-        
+    void Display::drawHeader(const Observer& obs, int visible, int total, int kept, const std::string& time_str) {
         attron(COLOR_PAIR(5));
         move(0,0);
         printw("VISIBLE EPHEMERIS v12.65-CODE-ONLY - CONF: config.yaml");
         for(int k=getcurx(stdscr); k<COLS-30; k++) addch(' '); 
-        mvprintw(0, COLS-30, "%s", time_buf);
+        mvprintw(0, COLS-30, "%s", time_str.c_str());
         attroff(COLOR_PAIR(5));
         
         auto loc = obs.getLocation();

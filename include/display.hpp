@@ -28,7 +28,7 @@ namespace ve {
         enum class InputResult { NONE, QUIT_NO_SAVE, SAVE_AND_QUIT, BREAK_LOOP };
         Display();
         ~Display();
-        void update(const std::vector<DisplayRow>& rows, const Observer& obs, const TimePoint& t, int total_tracked, int filter_kept, bool show_all_rf, double min_el, long manual_offset = 0);
+        void update(const std::vector<DisplayRow>& rows, const Observer& obs, const TimePoint& t, int total_tracked, int filter_kept, bool show_all_rf, double min_el, const std::string& time_str);
         InputResult handleInput();
         
         void setBlocking(bool blocking);
@@ -40,7 +40,7 @@ namespace ve {
         enum class InputMode { NORMAL, CONFIRM_QUIT };
         InputMode input_mode_;
         void initColors();
-        void drawHeader(const Observer& obs, const TimePoint& t, int visible, int total, int kept, long manual_offset);
+        void drawHeader(const Observer& obs, int visible, int total, int kept, const std::string& time_str);
         void drawFooter();
         void drawScrollbar(int total_rows, int visible_rows);
         int scroll_offset_;
