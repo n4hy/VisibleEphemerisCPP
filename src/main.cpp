@@ -89,6 +89,36 @@ std::time_t timegm_portable(struct tm* tm) {
     return total_seconds;
 }
 
+// Helper function for batch pre-calculation
+void run_precalc(std::vector<Satellite>& satellites, const Observer& obs, ThreadPool& pool, const AppConfig& cfg, std::chrono::system_clock::time_point start_time) {
+    if (satellites.empty()) return;
+
+    std::atomic<int> tasks_remaining(satellites.size());
+    std::cout << "Pre-calculating passes for " << satellites.size() << " satellites (24h horizon)..." << std::endl;
+
+    for(auto& sat : satellites) {
+        pool.enqueue([&sat, obs, start_time, cfg, &tasks_remaining]() {
+            PassPredictor local_predictor(obs);
+            auto passes = local_predictor.predict(sat, start_time); // Default 1440 mins (24h)
+            sat.setPredictedPasses(passes);
+            // Also calculate initial ground track (valid for start_time)
+            sat.calculateGroundTrack(start_time, cfg.trail_length_mins, 60);
+            tasks_remaining--;
+        });
+    }
+
+    // Blocking wait with progress
+    int total = satellites.size();
+    while(tasks_remaining > 0) {
+        int done = total - tasks_remaining;
+        if (done % 50 == 0 || done == total) {
+            std::cout << "\rProgress: " << done << "/" << total << "   " << std::flush;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    std::cout << "\nPre-calculation complete." << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     signal(SIGPIPE, SIG_IGN);
     
@@ -289,6 +319,9 @@ int main(int argc, char* argv[]) {
             rotator = std::make_unique<Rotator>(config.rotator_host, config.rotator_port);
         }
         
+        // Initial Pre-calculation
+        run_precalc(sats, observer, pool, config, std::chrono::system_clock::from_time_t(physics_epoch));
+
         web_server.start();
         text_server.start();
 
@@ -300,10 +333,21 @@ int main(int argc, char* argv[]) {
         // BACKGROUND MATH THREAD
         std::thread math_thread([&]() {
             while(running) {
+                // CALCULATE PHYSICS TIME (Decoupled)
+                auto elapsed_duration = Clock::now() - system_start_tp;
+                long elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(elapsed_duration).count();
+                std::time_t current_physics_time_t = physics_epoch + elapsed_sec;
+                auto now = std::chrono::system_clock::from_time_t(current_physics_time_t);
+
                 // HOT RELOAD CHECK
                 if (web_server.hasPendingConfig()) {
                     AppConfig new_cfg = web_server.popPendingConfig();
-                    if (new_cfg.group_selection != config.group_selection) {
+                    bool groups_changed = (new_cfg.group_selection != config.group_selection);
+
+                    config = new_cfg;
+                    observer = Observer(config.lat, config.lon, config.alt);
+
+                    if (groups_changed) {
                          Logger::log("Hot Reload: Switching groups to " + new_cfg.group_selection);
 
                          // SAFETY: Clear active_sats pointers in SharedState BEFORE destroying sats vector.
@@ -314,18 +358,11 @@ int main(int argc, char* argv[]) {
                              state.updated = false;
                          }
 
-                         // Now safe to reallocate
+                         // Now safe to reallocate and Re-Run Pre-calc
                          sats = tle_mgr.loadGroups(new_cfg.group_selection);
+                         run_precalc(sats, observer, pool, config, now);
                     }
-                    config = new_cfg;
-                    observer = Observer(config.lat, config.lon, config.alt); 
                 }
-
-                // CALCULATE PHYSICS TIME (Decoupled)
-                auto elapsed_duration = Clock::now() - system_start_tp;
-                long elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(elapsed_duration).count();
-                std::time_t current_physics_time_t = physics_epoch + elapsed_sec;
-                auto now = std::chrono::system_clock::from_time_t(current_physics_time_t);
 
                 std::vector<DisplayRow> local_rows;
                 std::vector<Satellite*> local_sats;
@@ -385,28 +422,30 @@ int main(int argc, char* argv[]) {
                         flare_status = VisibilityCalculator::checkFlare(pos, observer.getPositionECI(now), VisibilityCalculator::getSunPositionECI(now), sat.getApogeeKm());
                     }
 
-                    bool needs_update = sat.getPredictedPasses().empty() || sat.getFullTrackCopy().empty();
-                    if (needs_update && !sat.is_computing.exchange(true)) {
-                        pool.enqueue([&sat, &predictor, now, config]() {
-                            auto passes = predictor.predict(sat, now);
-                            sat.setPredictedPasses(passes);
-                            sat.calculateGroundTrack(now, config.trail_length_mins, 60);
-                            sat.is_computing = false;
-                        });
-                    }
-                    
-                    std::string next_event_str = "Calculating...";
+                    std::string next_event_str = "--";
                     auto passes = sat.getPredictedPasses();
-                    if (!passes.empty()) {
-                             auto& next = passes[0];
-                             long diff = std::chrono::duration_cast<std::chrono::seconds>(next.time - now).count();
-                             if (diff < 0) { std::vector<Satellite::PassEvent> e; sat.setPredictedPasses(e); }
-                             else {
-                                 int mm = diff / 60; int ss = diff % 60;
-                                 std::stringstream ts; ts << (next.is_aos ? "AOS " : "LOS ") << mm << "m " << ss << "s";
-                                 next_event_str = ts.str();
+
+                    // Find first future event
+                    for(const auto& p : passes) {
+                        long diff = std::chrono::duration_cast<std::chrono::seconds>(p.time - now).count();
+                        if (diff > 0) {
+                             int mm = diff / 60;
+                             int ss = diff % 60;
+
+                             std::stringstream ts;
+                             ts << (p.is_aos ? "AOS " : "LOS ");
+
+                             if (mm >= 60) {
+                                 int hh = mm / 60;
+                                 mm = mm % 60;
+                                 ts << hh << "h " << mm << "m";
+                             } else {
+                                 ts << mm << "m " << ss << "s";
                              }
+                             next_event_str = ts.str();
+                             break;
                         }
+                    }
                         
                     auto geo = sat.getGeodetic(now);
                     local_rows.push_back({sat.getName(), look.azimuth, look.elevation, look.range, rrate, geo.lat_deg, geo.lon_deg, sat.getApogeeKm(), state, sat.getNoradId(), next_event_str, flare_status});
@@ -424,7 +463,7 @@ int main(int argc, char* argv[]) {
 
                 // STABLE SORT: Prevents flickering
                 std::stable_sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
-                
+
                 // Enforce max_sats but PRESERVE Sun/Moon
                 size_t limit = (config.max_sats > 0) ? (size_t)config.max_sats : 5000;
 
