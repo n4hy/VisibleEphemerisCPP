@@ -14,24 +14,27 @@ It features a **Hybrid Decoupled Architecture** where the UI, Orbital Mechanics,
 * **Massive Scale**: Tracks the entire NORAD Active Catalog (13,000+ objects) simultaneously.
 * **Smart Caching**: Automatic TLE downloading and caching from Celestrak.
 * **Multi-Group Selection**: Track specific combinations (e.g., `amateur,weather,stations`) using the `--groupsel` argument.
-* **Sun and Moon always tracked except in Single Sat mode.
+* **Stability**: Implements "Pre-calculate All" logic at startup to ensure 24-hour pass predictions are instantly available, eliminating "Calculating..." flicker and UI jitter.
+* **Decoupled Clock**: Simulation time input is treated as "Face Value" (Local Wall-Clock Time) for display, while strictly adhering to UTC for orbital physics, eliminating timezone confusion.
+
 ### 🖥️ Display Systems
 * **NCurses Terminal Dashboard**: 
     * Flicker-free, color-coded real-time data table.
+    * **Flare Detection**: Identifies specular reflections from LEO satellites (flashing 'F' indicator).
     * **Horizon Flash**: Visual indicator (Red/White flashing) when a satellite is rising or setting (within 1° of horizon).
 * **Web Dashboard (Port 8080)**:
     * **Mercator Map**: Live ground tracks, "Red House" observer location, and auto-zoom to active horizon.
     * **Polar Skyplot**: Radar view of visible satellites with pulsing selection aura.
-    * **Smart Trails**: Displays ground track history and future path (+/- N minutes).
+    * **Flare Visualization**: Map markers flash yellow during predicted flare events.
+    * **Smart Trails**: Displays ground track history and future path.
 * **Web Terminal Mirror (Port 12345)**:
     * Ultra-lightweight HTML mirror of the terminal output.
     * Uses HTTP/1.0 "Fire-and-Forget" protocol to prevent browser hanging on slow connections.
 
 ### 📻 Radio & Visual Modes
-* **Optical Mode (Default)**: Filters satellites based on solar illumination (Sunlit satellite + Dark observer).
-* **Radio Mode (`--no-visible`)**: Tracks all satellites above the horizon regardless of lighting conditions (Day/Night/Eclipse).
-* **Doppler & Range Rate**: Real-time calculation of relative velocity (km/s) for radio tuning.
-* **HAMLIB control of rotors and rigs.
+* **Optical Filter (`--visible`)**: Toggle between showing only sunlit satellites (Visual Mode) or all satellites above the horizon (Radio Mode).
+* **Radio Control (`--radio`)**: Automated Hamlib control for Transceiver Frequency/Mode (Doppler correction). *Requires single satellite selection.*
+* **Rotator Control (`--rotator`)**: Automated Hamlib control for Azimuth/Elevation. *Requires single satellite selection.*
 
 ---
 
@@ -115,18 +118,24 @@ VisibleEphemeris
 **1. Amateur Radio Mode (Ham Radio Satellites)**
 Show all amateur satellites above the horizon, regardless of daylight.
 ```bash
-VisibleEphemeris --groupsel amateur --no-visible --minel 0
+VisibleEphemeris --groupsel amateur --visible false --minel 0
 ```
 
 **2. Visual Observing (ISS & Bright Objects)**
 Show only satellites that are sunlit while the observer is in darkness.
 ```bash
-VisibleEphemeris --groupsel "stations,visual" --minel 10
+VisibleEphemeris --groupsel "stations,visual" --visible true --minel 10
 ```
 
 **3. Specific Location Override**
 ```bash
 VisibleEphemeris --lat 39.54 --lon -76.09 --alt 0.1
+```
+
+**4. Hardware Control (Single Target)**
+Track the ISS with Rotator and Radio control enabled.
+```bash
+VisibleEphemeris --satsel ISS --radio true --rotator true
 ```
 
 ---
@@ -140,13 +149,16 @@ The application saves your settings to `config.yaml` on exit. You can override t
 | `--lon <deg>` | Observer Longitude (Decimal Degrees) | 0.0 |
 | `--alt <km>` | Observer Altitude (km) | 0.0 |
 | `--groupsel <list>` | Comma-separated Celestrak groups (e.g., `amateur,weather`) | `active` |
+| `--satsel <list>` | Comma-separated Satellite Names (Overrules groupsel) | None |
+| `--visible <bool>` | **True:** Optical Mode (Sunlit only). **False:** Radio Mode (All above horizon). | `false` |
+| `--radio <bool>` | Enable Hamlib Rig Control (Requires single sat selection) | `false` |
+| `--rotator <bool>` | Enable Hamlib Rotator Control (Requires single sat selection) | `false` |
 | `--max_sats <N>` | Max number of satellites to display in the table | 100 |
 | `--minel <deg>` | Minimum elevation filter | 0.0 |
 | `--maxapo <km>` | Filter satellites with apogee > N km (e.g. 1000 for LEO) | -1 (Disabled) |
-| `--no-visible` | Radio Mode: Ignore optical visibility constraints | False |
 | `--trail_mins <N>` | Length of ground track trail (+/- minutes) | 5 |
 | `--refresh` | Force fresh download of TLE data | False |
-| `--time <str>` | Simulate Time (Format: "YYYY-MM-DD HH:MM:SS"). **Uses Local Time (TZ).** | Real-time |
+| `--time <str>` | Simulate Time (Format: "YYYY-MM-DD HH:MM:SS"). **Uses Local Wall-Clock Time.** | Real-time |
 
 ---
 
