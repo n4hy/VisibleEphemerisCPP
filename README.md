@@ -12,7 +12,7 @@ It features a **Hybrid Decoupled Architecture** where the UI, Orbital Mechanics,
 ### 🛰️ Tracking Engine
 * **SGP4/SDP4 Propagation**: Uses `libsgp4` (C++) or `Skyfield` (Python) for high-precision orbital math.
 * **Massive Scale**: Tracks the entire NORAD Active Catalog (13,000+ objects) simultaneously.
-* **Smart Caching**: Automatic TLE downloading and caching from Celestrak.
+* **Smart Caching**: Automatic TLE downloading and caching from Celestrak with 24-hour auto-refresh cycle.
 * **Multi-Group Selection**: Track specific combinations (e.g., `amateur,weather,stations`) using the `--groupsel` argument.
 * **Stability**: Implements "Pre-calculate All" logic at startup to ensure 24-hour pass predictions are instantly available, eliminating "Calculating..." flicker and UI jitter.
 * **Decoupled Clock**: Simulation time input is treated as "Face Value" (Local Wall-Clock Time) for display, while strictly adhering to UTC for orbital physics, eliminating timezone confusion.

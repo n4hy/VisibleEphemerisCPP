@@ -332,6 +332,8 @@ int main(int argc, char* argv[]) {
 
         // BACKGROUND MATH THREAD
         std::thread math_thread([&]() {
+            auto last_tle_refresh = std::chrono::steady_clock::now();
+
             while(running) {
                 // CALCULATE PHYSICS TIME (Decoupled)
                 auto elapsed_duration = Clock::now() - system_start_tp;
@@ -339,29 +341,54 @@ int main(int argc, char* argv[]) {
                 std::time_t current_physics_time_t = physics_epoch + elapsed_sec;
                 auto now = std::chrono::system_clock::from_time_t(current_physics_time_t);
 
-                // HOT RELOAD CHECK
+                // AUTO-REFRESH / HOT-RELOAD LOGIC
+                bool perform_reload = false;
+                bool force_refresh = false;
+
+                // 1. Check Schedule (Daily TLE Update)
+                auto now_steady = std::chrono::steady_clock::now();
+                if (now_steady - last_tle_refresh > std::chrono::hours(24)) {
+                    Logger::log("Scheduled Daily TLE Refresh...");
+                    perform_reload = true;
+                    force_refresh = true;
+                    last_tle_refresh = now_steady;
+                }
+
+                // 2. Check Config Change
                 if (web_server.hasPendingConfig()) {
                     AppConfig new_cfg = web_server.popPendingConfig();
-                    bool groups_changed = (new_cfg.group_selection != config.group_selection);
+                    bool selection_changed = (new_cfg.group_selection != config.group_selection) ||
+                                             (new_cfg.sat_selection != config.sat_selection);
 
                     config = new_cfg;
                     observer = Observer(config.lat, config.lon, config.alt);
 
-                    if (groups_changed) {
-                         Logger::log("Hot Reload: Switching groups to " + new_cfg.group_selection);
-
-                         // SAFETY: Clear active_sats pointers in SharedState BEFORE destroying sats vector.
-                         {
-                             std::lock_guard<std::mutex> lock(state.mutex);
-                             state.active_sats.clear();
-                             state.rows.clear();
-                             state.updated = false;
-                         }
-
-                         // Now safe to reallocate and Re-Run Pre-calc
-                         sats = tle_mgr.loadGroups(new_cfg.group_selection);
-                         run_precalc(sats, observer, pool, config, now);
+                    if (selection_changed) {
+                         Logger::log("Hot Reload: Switching selection...");
+                         perform_reload = true;
                     }
+                }
+
+                if (perform_reload) {
+                     if (force_refresh) tle_mgr.clearCache();
+
+                     // SAFETY: Clear active_sats pointers in SharedState BEFORE destroying sats vector.
+                     {
+                         std::lock_guard<std::mutex> lock(state.mutex);
+                         state.active_sats.clear();
+                         state.rows.clear();
+                         state.updated = false;
+                     }
+
+                     // Re-load
+                     if (!config.sat_selection.empty()) {
+                          sats = tle_mgr.loadSpecificSats(config.sat_selection);
+                     } else {
+                          sats = tle_mgr.loadGroups(config.group_selection);
+                     }
+
+                     // Re-Run Pre-calc
+                     run_precalc(sats, observer, pool, config, now);
                 }
 
                 std::vector<DisplayRow> local_rows;
