@@ -32,7 +32,7 @@ It features a **Hybrid Decoupled Architecture** where the UI, Orbital Mechanics,
     * Uses HTTP/1.0 "Fire-and-Forget" protocol to prevent browser hanging on slow connections.
 
 ### 📻 Radio & Visual Modes
-* **Optical Filter (`--visible`)**: Toggle between showing only sunlit satellites (Visual Mode) or all satellites above the horizon (Radio Mode).
+* **Optical Filter (`--visible`)**: Toggle between showing only sunlit satellites (Visual Mode) or all satellites in the group (Show All Mode), ignoring horizon limits.
 * **Radio Control (`--radio`)**: Automated Hamlib control for Transceiver Frequency/Mode (Doppler correction). *Requires single satellite selection.*
 * **Rotator Control (`--rotator`)**: Automated Hamlib control for Azimuth/Elevation. *Requires single satellite selection.*
 
@@ -115,10 +115,10 @@ VisibleEphemeris
 
 ### Common Examples
 
-**1. Amateur Radio Mode (Ham Radio Satellites)**
-Show all amateur satellites above the horizon, regardless of daylight.
+**1. Show All Mode (e.g. Amateur Radio)**
+Show all amateur satellites, regardless of daylight or elevation (includes below horizon).
 ```bash
-VisibleEphemeris --groupsel amateur --visible false --minel 0
+VisibleEphemeris --groupsel amateur --visible false
 ```
 
 **2. Visual Observing (ISS & Bright Objects)**
@@ -150,7 +150,7 @@ The application saves your settings to `config.yaml` on exit. You can override t
 | `--alt <km>` | Observer Altitude (km) | 0.0 |
 | `--groupsel <list>` | Comma-separated Celestrak groups (e.g., `amateur,weather`) | `active` |
 | `--satsel <list>` | Comma-separated Satellite Names (Overrules groupsel) | None |
-| `--visible <bool>` | **True:** Optical Mode (Sunlit only). **False:** Radio Mode (All above horizon). | `false` |
+| `--visible <bool>` | **True:** Optical Mode (Sunlit only, >MinEl). **False:** Show All Mode (All satellites, ignores MinEl). | `false` |
 | `--radio <bool>` | Enable Hamlib Rig Control (Requires single sat selection) | `false` |
 | `--rotator <bool>` | Enable Hamlib Rotator Control (Requires single sat selection) | `false` |
 | `--max_sats <N>` | Max number of satellites to display in the table | 100 |

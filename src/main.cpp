@@ -424,17 +424,18 @@ int main(int argc, char* argv[]) {
 
                     // 3. User Filters
 
-                    // VISIBILITY FILTER
-                    // If visible_only is TRUE, we skip if NOT visible.
-                    if (config.visible_only && state != VisibilityCalculator::State::VISIBLE) {
-                        rejected_vis++;
-                        continue;
-                    }
-
-                    // MIN ELEVATION FILTER
-                    if (look.elevation < config.min_el) {
-                        rejected_el++;
-                        continue;
+                    // VISIBILITY & ELEVATION FILTERS
+                    // If visible_only is TRUE, we apply strict optical and elevation filters.
+                    // If visible_only is FALSE, we show EVERYTHING (as requested), bypassing elevation checks.
+                    if (config.visible_only) {
+                        if (state != VisibilityCalculator::State::VISIBLE) {
+                            rejected_vis++;
+                            continue;
+                        }
+                        if (look.elevation < config.min_el) {
+                            rejected_el++;
+                            continue;
+                        }
                     }
 
                     // MAX APOGEE FILTER
