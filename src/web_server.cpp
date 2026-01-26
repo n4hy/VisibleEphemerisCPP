@@ -217,17 +217,32 @@ namespace ve {
                 ctx.fillText('N', cx-5, cy-r-5); ctx.fillText('E', cx+r+5, cy+5);
                 
                 lastData.forEach(s => {
-                    if(s.e < 0) return;
+                    if(s.e < 0) return; // Sky plot only shows above horizon
                     var dist = r * (90.0 - s.e) / 90.0;
                     var rad = (s.a - 90.0) * (Math.PI/180.0);
                     var x = cx + dist * Math.cos(rad);
                     var y = cy + dist * Math.sin(rad);
                     if(s.id===selectedId) {
-                        var t=Date.now(); var pr=8+4*Math.sin(t*0.005); 
-                        ctx.save(); ctx.beginPath(); ctx.arc(x, y, pr, 0, 2*Math.PI); 
+                        var t=Date.now(); var pr=8+4*Math.sin(t*0.005);
+                        ctx.save(); ctx.beginPath(); ctx.arc(x, y, pr, 0, 2*Math.PI);
                         ctx.strokeStyle='#ff00ff'; ctx.lineWidth=2; ctx.stroke(); ctx.restore();
                     }
-                    var col = (s.v==="YES") ? "#0f0" : ((s.v==="DAY")?"#ff0":"#0ff");
+                    // Color logic based on min_el and visibility
+                    var col;
+                    var min_el = config.min_el || 0;
+                    if (config.show_all) {
+                        // Radio mode: Yellow=visible+above min_el, Green=not visible+above min_el, Grey=below min_el
+                        if (s.e < min_el) {
+                            col = "#808080"; // Grey
+                        } else if (s.v === "YES") {
+                            col = "#ffff00"; // Yellow for visible
+                        } else {
+                            col = "#00ff00"; // Green for not visible but above min_el
+                        }
+                    } else {
+                        // Optical mode: Original colors
+                        col = (s.v==="YES") ? "#0f0" : ((s.v==="DAY")?"#ff0":"#0ff");
+                    }
                     if (s.f > 0) {
                         col = "#ffff00";
                         var t_ms = Date.now();
@@ -294,12 +309,27 @@ namespace ve {
             }
 
             var currentIds = new Set();
+            var min_el = config.min_el || 0;
             lastData.forEach(s => {
                 currentIds.add(s.id);
                 if(markers[s.id]) { markers[s.id].setLatLng([s.lat, s.lon]); }
                 else { markers[s.id]=L.circleMarker([s.lat, s.lon], {color:'#0f0', radius:6, weight:1, fillColor:'#0f0', fillOpacity:0.9}).addTo(map).on('click', ()=>selectSat(s.id)); }
-                
-                var color = (s.v==="YES") ? "#00ff00" : ((s.v==="DAY")?"#ffff00":"#00ffff");
+
+                // Color logic based on min_el and visibility
+                var color;
+                if (config.show_all) {
+                    // Radio mode: Yellow=visible+above min_el, Green=not visible+above min_el, Grey=below min_el or horizon
+                    if (s.e < 0 || s.e < min_el) {
+                        color = "#808080"; // Grey
+                    } else if (s.v === "YES") {
+                        color = "#ffff00"; // Yellow for visible
+                    } else {
+                        color = "#00ff00"; // Green for not visible but above min_el
+                    }
+                } else {
+                    // Optical mode: Original colors
+                    color = (s.v==="YES") ? "#00ff00" : ((s.v==="DAY")?"#ffff00":"#00ffff");
+                }
                 var cls = "";
                 if(s.f > 0) {
                      color = "#ffff00";

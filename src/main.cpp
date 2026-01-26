@@ -432,7 +432,9 @@ int main(int argc, char* argv[]) {
                     }
 
                     // MIN ELEVATION FILTER
-                    if (look.elevation < config.min_el) {
+                    // When visible_only=false (radio mode), show ALL satellites in the group
+                    // The display layer will color them appropriately (yellow/green/grey)
+                    if (config.visible_only && look.elevation < config.min_el) {
                         rejected_el++;
                         continue;
                     }

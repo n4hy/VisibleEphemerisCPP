@@ -49,10 +49,21 @@ def main():
     parser.add_argument("--alt", type=float, default=cm.get('alt', 0.1), help="Observer Altitude (km)")
     parser.add_argument("--groupsel", type=str, default=cm.get('group_selection', "active"), help="Comma-separated Celestrak group names")
     parser.add_argument("--minel", type=float, default=cm.get('min_el', 0.0), help="Minimum elevation filter (degrees)")
-    parser.add_argument("--no-visible", action='store_true', default=cm.get('show_all_visible', False), help="Show ALL satellites (ignore filters)")
+    parser.add_argument("--maxsats", type=int, default=cm.get('max_sats', 100), help="Maximum satellites to display")
+    # visible_only: False = show ALL satellites, True = optical mode (visible only)
+    # Legacy: --no-visible flag or show_all_visible config inverts this
+    default_visible_only = cm.get('visible_only', not cm.get('show_all_visible', False))
+    parser.add_argument("--visible", action='store_true', default=default_visible_only, help="Optical mode: show only visible satellites")
+    parser.add_argument("--no-visible", action='store_true', help="Show ALL satellites (ignore visibility filter)")
     parser.add_argument("--trail_mins", type=int, default=cm.get('trail_length_mins', 5), help="Trail length in minutes")
 
     args = parser.parse_args()
+
+    # Handle visible_only logic: --no-visible overrides --visible
+    if args.no_visible:
+        args.visible_only = False
+    else:
+        args.visible_only = args.visible
 
     # --- Initialization ---
     observer = Observer(args.lat, args.lon, args.alt)
@@ -132,13 +143,15 @@ def main():
                     sat.next_event = sat.get_next_event_text(t_now_ts)
 
                     # Filter Logic
+                    # When visible_only=False: Show ALL satellites (color by elevation/visibility in UI)
+                    # When visible_only=True: Only show optically visible satellites above min_el
                     should_display = False
 
-                    if args.no_visible:
-                        # User Request: "REJECT ALL FILTERS... I want to see every bloody satellite"
+                    if not args.visible_only:
+                        # Radio/Show All Mode: Display every satellite in the group
                         should_display = True
                     else:
-                        # Optical Mode: Must be above horizon AND visibly illuminated
+                        # Optical Mode: Must be above min_el AND visibly illuminated
                         is_above_horizon = sat.el >= args.minel
                         is_optically_valid = (sat.visibility == "YES")
                         should_display = is_above_horizon and is_optically_valid
@@ -168,20 +181,27 @@ def main():
                             'next': sat.next_event
                         })
 
-                # Sort for display
+                # Sort for display (by elevation, highest first)
                 visible_sats_display.sort(key=lambda s: s['el'], reverse=True)
+                web_sats_data.sort(key=lambda s: s['e'], reverse=True)
+
+                # Apply max_sats limit
+                if args.maxsats > 0 and len(web_sats_data) > args.maxsats:
+                    web_sats_data = web_sats_data[:args.maxsats]
+                if args.maxsats > 0 and len(visible_sats_display) > args.maxsats:
+                    visible_sats_display = visible_sats_display[:args.maxsats]
 
                 # Update Shared Web State
                 web_server.tracker_state['config'] = {
                     'lat': args.lat, 'lon': args.lon, 'min_el': args.minel,
-                    'max_apo': -1, 'show_all': args.no_visible,
+                    'max_apo': -1, 'show_all': not args.visible_only,
                     'groups': args.groupsel,
                     'sun_lat': sun_lat, 'sun_lon': sun_lon
                 }
                 web_server.tracker_state['satellites'] = web_sats_data
 
                 # --- Build Output ---
-                mode_str = "SHOW ALL (No Filter)" if args.no_visible else "OPTICAL MODE (Sunlit Only)"
+                mode_str = "SHOW ALL (Radio Mode)" if not args.visible_only else "OPTICAL MODE (Sunlit Only)"
 
                 output_lines = []
                 header = f"Observer: {args.lat:.2f}, {args.lon:.2f} | {mode_str} | {len(visible_sats_display)}/{len(satellites)} | {t_now.strftime('%H:%M:%S UTC')}"
@@ -237,7 +257,8 @@ def main():
                     'lon': args.lon,
                     'alt': args.alt,
                     'min_el': args.minel,
-                    'show_all_visible': args.no_visible,
+                    'max_sats': args.maxsats,
+                    'visible_only': args.visible_only,
                     'group_selection': args.groupsel,
                     'trail_length_mins': args.trail_mins
                 }

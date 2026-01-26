@@ -17,14 +17,15 @@ namespace ve {
     void Display::initColors() {
         if (has_colors()) {
             start_color();
-            init_pair(1, COLOR_GREEN, COLOR_BLACK); 
+            init_pair(1, COLOR_GREEN, COLOR_BLACK);
             init_pair(2, COLOR_YELLOW, COLOR_BLACK);
-            init_pair(3, COLOR_CYAN, COLOR_BLACK); 
-            init_pair(4, COLOR_RED, COLOR_BLACK); 
+            init_pair(3, COLOR_CYAN, COLOR_BLACK);
+            init_pair(4, COLOR_RED, COLOR_BLACK);
             init_pair(5, COLOR_WHITE, COLOR_BLUE);
-            init_pair(6, COLOR_BLACK, COLOR_WHITE); 
-            init_pair(7, COLOR_WHITE, COLOR_RED); 
+            init_pair(6, COLOR_BLACK, COLOR_WHITE);
+            init_pair(7, COLOR_WHITE, COLOR_RED);
             init_pair(8, COLOR_RED, COLOR_WHITE); // Flash: Red/White
+            init_pair(9, COLOR_WHITE, COLOR_BLACK); // Grey (dim white) for below min_el
         }
     }
 
@@ -137,14 +138,41 @@ namespace ve {
                 const auto& r = rows[data_idx];
                 int color = 3;
                 std::string state_str = "---";
+                bool use_dim = false;
 
-                if (r.el < 0) {
-                    color = 4; // RED
-                    state_str = "HOR";
+                if (show_all_rf) {
+                    // RADIO MODE (visible_only=false): New color scheme
+                    // Yellow: above min_el AND VISIBLE
+                    // Green: above min_el AND NOT VISIBLE (DAYLIGHT/ECLIPSED)
+                    // Grey (dim): below min_el or below horizon
+                    if (r.el < 0) {
+                        color = 9; use_dim = true; // Grey for below horizon
+                        state_str = "HOR";
+                    } else if (r.el < min_el) {
+                        color = 9; use_dim = true; // Grey for below min_el
+                        if (r.state == VisibilityCalculator::State::VISIBLE) state_str = "VIS";
+                        else if (r.state == VisibilityCalculator::State::DAYLIGHT) state_str = "DAY";
+                        else if (r.state == VisibilityCalculator::State::ECLIPSED) state_str = "ECL";
+                    } else {
+                        // Above min_el
+                        if (r.state == VisibilityCalculator::State::VISIBLE) {
+                            state_str = "VIS"; color = 2; // Yellow
+                        } else if (r.state == VisibilityCalculator::State::DAYLIGHT) {
+                            state_str = "DAY"; color = 1; // Green
+                        } else if (r.state == VisibilityCalculator::State::ECLIPSED) {
+                            state_str = "ECL"; color = 1; // Green
+                        }
+                    }
                 } else {
-                    if (r.state == VisibilityCalculator::State::VISIBLE) { state_str = "VIS"; color=1; }
-                    else if (r.state == VisibilityCalculator::State::DAYLIGHT) { state_str = "DAY"; color=2; }
-                    else if (r.state == VisibilityCalculator::State::ECLIPSED) { state_str = "ECL"; color=3; }
+                    // OPTICAL MODE (visible_only=true): Original color scheme
+                    if (r.el < 0) {
+                        color = 4; // RED
+                        state_str = "HOR";
+                    } else {
+                        if (r.state == VisibilityCalculator::State::VISIBLE) { state_str = "VIS"; color=1; }
+                        else if (r.state == VisibilityCalculator::State::DAYLIGHT) { state_str = "DAY"; color=2; }
+                        else if (r.state == VisibilityCalculator::State::ECLIPSED) { state_str = "ECL"; color=3; }
+                    }
                 }
 
                 std::string d_name = r.name.substr(0,14);
@@ -152,33 +180,31 @@ namespace ve {
                 // FLARE LOGIC
                 if (r.flare_status > 0) {
                     d_name += " F";
-                    // Only flash Red if flare is active.
-                    // Hit (2) = Fast Flash? Near (1) = Slow Flash?
-                    // User said "flashing red F".
-                    // We can reuse the flash_state or make a faster one.
-                    // Let's use standard flash for now, maybe override color to RED.
+                    use_dim = false; // Flares override dim
                     if (r.flare_status == 2) {
                         // HIT: Fast Flash
                         long ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
                         if ((ms / 200) % 2 == 0) color = 4; // RED
-                        else color = 3; // CYAN (or background?)
+                        else color = 3; // CYAN
                     } else {
                         // NEAR: Slow Flash
                         if (flash_state) color = 4; // RED
                     }
-                } else if (std::abs(r.el - min_el) < 1.0) {
-                    // HORIZON FLASH
-                    if (flash_state) color = 8; 
+                } else if (!show_all_rf && std::abs(r.el - min_el) < 1.0) {
+                    // HORIZON FLASH (only in optical mode)
+                    if (flash_state) color = 8;
                     else color = 4;
                 }
 
                 const char* row_fmt = "%-15s %8.1f %8.1f %10.1f %8.3f %-5s %-12s";
-                
+
+                if (use_dim) attron(A_DIM);
                 attron(COLOR_PAIR(color));
-                mvprintw(start_y + i, 0, row_fmt, 
+                mvprintw(start_y + i, 0, row_fmt,
                          d_name.c_str(), r.az, r.el, r.range, r.range_rate,
                          state_str.c_str(), r.next_event.c_str());
                 attroff(COLOR_PAIR(color));
+                if (use_dim) attroff(A_DIM);
                 clrtoeol(); 
             }
             

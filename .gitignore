@@ -8,3 +8,4 @@ VisibleEphemeris
 config.yaml
 ve_log.txt
 
+venv/

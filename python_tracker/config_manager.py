@@ -10,7 +10,9 @@ class ConfigManager:
             'alt': 0.0,
             'min_el': 0.0,
             'max_apo': -1,
-            'show_all_visible': False,
+            'max_sats': 100,
+            'visible_only': False,  # False = show all satellites, True = optical mode only
+            'show_all_visible': False,  # Legacy compatibility
             'group_selection': "active",
             'trail_length_mins': 5
         }
