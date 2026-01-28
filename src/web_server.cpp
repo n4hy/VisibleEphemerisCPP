@@ -59,7 +59,7 @@ namespace ve {
         #map, #skyplot { width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
         #skyplot { display: none; background: #000; }
         .control-btn { padding: 5px 10px; background: #333; border: 1px solid #555; color: #fff; cursor: pointer; margin-left:5px; }
-        .vis-YES { color: #0f0; font-weight: bold; } .vis-DAY { color: #ff0; } .vis-NO { color: #0ff; }
+        .vis-YES { color: #0f0; font-weight: bold; } .vis-DAY { color: #ff0; } .vis-NO { color: #0ff; } .vis-LOW { color: #808080; }
         .house-icon { font-size: 24px; text-align: center; text-shadow: 2px 2px 4px #000; }
         @keyframes flash-yellow { 0% { fill-opacity: 1; fill: #ffff00; } 50% { fill-opacity: 0.2; fill: #ffff00; } 100% { fill-opacity: 1; fill: #ffff00; } }
         @keyframes flash-fast { 0% { fill-opacity: 1; fill: #ffff00; } 50% { fill-opacity: 0; fill: #ff0000; } 100% { fill-opacity: 1; fill: #ffff00; } }
@@ -172,16 +172,32 @@ namespace ve {
                 return 0;
             });
             var html = '';
+            var min_el = config.min_el || 0;
             lastData.forEach(s => {
                 var cls = (s.id===selectedId) ? 'active' : '';
-                var visCls = 'vis-' + s.v;
+                var visCls;
+                var statusText = s.v;
                 var displayName = s.n;
+                if (config.show_all) {
+                    // Radio mode: Yellow=visible, Green=not visible, Grey=below min_el/horizon
+                    if (s.e < 0 || s.e < min_el) {
+                        visCls = 'vis-LOW';
+                        statusText = (s.e < 0) ? 'HOR' : s.v;
+                    } else if (s.v === "YES") {
+                        visCls = 'vis-DAY';  // Yellow for visible in radio mode
+                    } else {
+                        visCls = 'vis-YES';  // Green for not visible but above min_el
+                    }
+                } else {
+                    // Optical mode: original colors
+                    visCls = 'vis-' + s.v;
+                }
                 if (s.f > 0) {
                     visCls = 'vis-DAY';
                     displayName += " (F)";
                 }
                 html += `<tr class="${cls}" onclick="selectSat(${s.id})">
-                    <td>${displayName}</td><td>${s.a.toFixed(1)}</td><td>${s.e.toFixed(1)}</td><td>${s.next}</td><td class="${visCls}">${s.v}</td></tr>`;
+                    <td>${displayName}</td><td>${s.a.toFixed(1)}</td><td>${s.e.toFixed(1)}</td><td>${s.next}</td><td class="${visCls}">${statusText}</td></tr>`;
             });
             document.getElementById('sat-list').innerHTML = html;
             updateHeaders();

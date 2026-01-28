@@ -135,13 +135,13 @@
                 var cls = (s.id===selectedId) ? 'active' : '';
                 var visCls;
                 if (show_all) {
-                    // Radio mode: Yellow=visible+above min_el, Green=above min_el, Grey=below
+                    // Radio mode: Yellow=visible, Green=not visible, Grey=below min_el/horizon
                     if (s.e < 0 || s.e < min_el) {
                         visCls = 'vis-LOW';  // Grey
                     } else if (s.v === "YES") {
-                        visCls = 'vis-YES';  // Green (visible)
+                        visCls = 'vis-DAY';  // Yellow for visible in radio mode
                     } else {
-                        visCls = 'vis-DAY';  // Yellow (above min_el but not visible)
+                        visCls = 'vis-YES';  // Green for not visible but above min_el
                     }
                 } else {
                     // Optical mode: original colors

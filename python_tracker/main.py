@@ -191,7 +191,9 @@ def main():
                 web_sats_data.sort(key=lambda s: s['e'], reverse=True)
 
                 # Apply max_sats limit
-                if args.maxsats > 0 and len(web_sats_data) > args.maxsats:
+                # Web data: No limit when visible_only=False (radio mode) - show ALL satellites
+                # Terminal display: Always apply max_sats limit for readability
+                if args.visible_only and args.maxsats > 0 and len(web_sats_data) > args.maxsats:
                     web_sats_data = web_sats_data[:args.maxsats]
                 if args.maxsats > 0 and len(visible_sats_display) > args.maxsats:
                     visible_sats_display = visible_sats_display[:args.maxsats]

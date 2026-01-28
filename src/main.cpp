@@ -494,7 +494,11 @@ int main(int argc, char* argv[]) {
                 std::stable_sort(local_rows.begin(), local_rows.end(), [](const DisplayRow& a, const DisplayRow& b) { return a.el > b.el; });
 
                 // Enforce max_sats but PRESERVE Sun/Moon
-                size_t limit = (config.max_sats > 0) ? (size_t)config.max_sats : 5000;
+                // When visible_only=false (radio mode), show ALL satellites - no max_sats limit
+                // The user explicitly wants to see the entire group
+                size_t limit = config.visible_only
+                    ? ((config.max_sats > 0) ? (size_t)config.max_sats : 5000)
+                    : 50000;  // Effectively unlimited for radio mode
 
                 if (local_rows.size() > limit) {
                     std::vector<DisplayRow> kept;
@@ -585,7 +589,14 @@ int main(int argc, char* argv[]) {
                     web_server.updateData(current_rows, state.active_sats, config, physics_now, time_display_str);
                 }
             }
-            display.update(current_rows, observer, physics_now, sats.size(), current_rows.size(), !config.visible_only, config.min_el, time_display_str);
+
+            // Terminal display uses max_sats limit; web gets full list
+            std::vector<DisplayRow> terminal_rows = current_rows;
+            size_t terminal_limit = (config.max_sats > 0) ? (size_t)config.max_sats : 5000;
+            if (terminal_rows.size() > terminal_limit) {
+                terminal_rows.resize(terminal_limit);
+            }
+            display.update(terminal_rows, observer, physics_now, sats.size(), current_rows.size(), !config.visible_only, config.min_el, time_display_str);
             text_server.updateData(display.getLastFrame()); 
         }
 
