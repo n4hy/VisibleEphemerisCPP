@@ -200,7 +200,7 @@ int main(int argc, char* argv[]) {
         else if (arg == "--alt") { if (i+1 < argc) config.alt = std::stod(argv[++i]); }
         else if (arg == "--max_sats") { if (i+1 < argc) config.max_sats = std::stoi(argv[++i]); }
         else if (arg == "--trail_mins") { if (i+1 < argc) config.trail_length_mins = std::stoi(argv[++i]); }
-        else if (arg == "--maxapo") { if (i+1 < argc) config.max_apo = std::stod(argv[++i]); }
+        else if (arg == "--maxapo" || arg == "--map_apo") { if (i+1 < argc) config.max_apo = std::stod(argv[++i]); }
         else if (arg == "--minel") { if (i+1 < argc) config.min_el = std::stod(argv[++i]); }
         else if (arg == "--groupsel") { if (i+1 < argc) config.group_selection = argv[++i]; config.sat_selection = ""; } 
         else if (arg == "--satsel") { if (i+1 < argc) config.sat_selection = argv[++i]; } 

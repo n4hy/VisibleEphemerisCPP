@@ -22,12 +22,35 @@ class Satellite:
         self.visibility = "NO" # YES, DAY, NO
         self.trail = [] # List of [lat, lon]
         self.next_event = "N/A"
-        self.apogee = 0.0 # Approximate
+        self.apogee = self._calculate_apogee() # Calculated from TLE orbital elements
 
         # Pass Prediction Cache
         self.passes = [] # List of (time, event_type_int)
         self.last_pass_calc = None
         self.is_computing = False
+
+    def _calculate_apogee(self):
+        """Calculate apogee (km above Earth surface) from TLE orbital elements."""
+        try:
+            # Get mean motion (revolutions per day) from TLE
+            mm = self.skyfield_sat.model.no_kozai  # radians per minute
+            n = mm / 60.0  # Convert to radians per second
+
+            # Earth's gravitational parameter (km^3/s^2)
+            mu = 398600.4418
+            EARTH_RADIUS_KM = 6378.137
+
+            # Calculate semi-major axis using Kepler's third law
+            # n = sqrt(mu / a^3)  =>  a = (mu / n^2)^(1/3)
+            a = (mu / (n * n)) ** (1.0 / 3.0)
+
+            # Get eccentricity from TLE
+            e = self.skyfield_sat.model.ecco
+
+            # Apogee = a * (1 + e) - Earth_radius
+            return a * (1 + e) - EARTH_RADIUS_KM
+        except Exception:
+            return 0.0
 
     def update_position(self, observer, t_now, trail_mins=0):
         # Ensure t_now is a Skyfield Time object
@@ -72,9 +95,7 @@ class Satellite:
         if trail_mins > 0:
             self.trail = self.calculate_ground_track(t, trail_mins)
 
-        # 5. Approx Apogee/Perigee
-        # Using current altitude for now
-        self.apogee = self.alt_km
+        # 5. Apogee is computed once from TLE in __init__, no need to update here
 
     def calculate_ground_track(self, t_center, minutes):
         # Generate points +/- minutes

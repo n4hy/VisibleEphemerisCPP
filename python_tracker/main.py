@@ -56,6 +56,7 @@ def main():
     parser.add_argument("--visible", action='store_true', default=default_visible_only, help="Optical mode: show only visible satellites")
     parser.add_argument("--no-visible", action='store_true', help="Show ALL satellites (ignore visibility filter)")
     parser.add_argument("--trail_mins", type=int, default=cm.get('trail_length_mins', 5), help="Trail length in minutes")
+    parser.add_argument("--maxapo", "--map_apo", type=float, default=cm.get('max_apo', -1), dest='maxapo', help="Maximum apogee filter (km). Satellites above this are excluded. -1 disables.")
 
     args = parser.parse_args()
 
@@ -156,6 +157,10 @@ def main():
                         is_optically_valid = (sat.visibility == "YES")
                         should_display = is_above_horizon and is_optically_valid
 
+                    # Apply max apogee filter (if enabled)
+                    if should_display and args.maxapo > 0 and sat.apogee > args.maxapo:
+                        should_display = False
+
                     if should_display:
                         # Add to lists
                         web_data = {
@@ -167,7 +172,7 @@ def main():
                             "e": sat.el,
                             "v": sat.visibility,
                             "next": sat.next_event,
-                            "apo": sat.alt_km,
+                            "apo": sat.apogee,
                             "trail": sat.trail
                         }
                         web_sats_data.append(web_data)
@@ -194,7 +199,7 @@ def main():
                 # Update Shared Web State
                 web_server.tracker_state['config'] = {
                     'lat': args.lat, 'lon': args.lon, 'min_el': args.minel,
-                    'max_apo': -1, 'show_all': not args.visible_only,
+                    'max_apo': args.maxapo, 'show_all': not args.visible_only,
                     'groups': args.groupsel,
                     'sun_lat': sun_lat, 'sun_lon': sun_lon
                 }
