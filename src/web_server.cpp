@@ -453,7 +453,9 @@ namespace ve {
             if (new_socket >= 0) {
                 char buffer[4096]; int bytes = read(new_socket, buffer, 4096);
                 if (bytes > 0) { std::string request(buffer, bytes); handleRequest(new_socket, request); }
-                shutdown(new_socket, SHUT_WR); char drain[128]; while(read(new_socket, drain, sizeof(drain)) > 0); close(new_socket);
+                shutdown(new_socket, SHUT_WR); char drain[128]; while(read(new_socket, drain, sizeof(drain)) > 0)
+                    ; // Intentionally empty - drain remaining data
+                close(new_socket);
             } else { if (!running_) break; std::this_thread::sleep_for(std::chrono::milliseconds(100)); }
         }
     }
