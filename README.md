@@ -276,3 +276,4 @@ Multiple groups can be combined: `--groupsel amateur,weather,stations`
 * **AI Assistance**: Claude (Anthropic) for implementation
 * **Based on**: *Quiktrak* (1981 VBasic, 1983 Commodore C, IBM C 1986, 1990, 1999)
 * **License**: MIT
+ENJOYMENT IS REQUIRED. REPORT BUGS!
