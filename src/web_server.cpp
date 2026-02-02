@@ -145,9 +145,11 @@ namespace ve {
             return latLngs;
         }
 
+        var config = {};  // Global config for renderTable
         function updateSats() {
             fetch('/api/satellites').then(r=>r.json()).then(d => {
                 lastData = d.satellites || [];
+                config = d.config || {};  // Store config globally
                 var status = "Live: " + lastData.length;
                 if (d.config) {
                     var info = [];
@@ -158,7 +160,7 @@ namespace ve {
                 }
                 document.getElementById('status').innerText = status;
                 renderTable();
-                renderMap(d.config);
+                renderMap(config);
             }).catch(e => console.error("Data fetch error:", e));
         }
 
