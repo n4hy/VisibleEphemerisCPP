@@ -50,16 +50,17 @@ if(NOT SGP4_FOUND)
     message(FATAL_ERROR "Could not find libsgp4s.so.")
 endif()
 
-set(SOURCES 
-    src/main.cpp 
-    src/satellite.cpp 
-    src/observer.cpp 
-    src/visibility.cpp 
-    src/pass_predictor.cpp 
+set(SOURCES
+    src/main.cpp
+    src/satellite.cpp
+    src/observer.cpp
+    src/visibility.cpp
+    src/pass_predictor.cpp
     src/tle_manager.cpp
     src/display.cpp
     src/web_server.cpp
     src/text_server.cpp
+    src/physics_server.cpp
     src/config_manager.cpp
     src/logger.cpp
     src/rotator.cpp

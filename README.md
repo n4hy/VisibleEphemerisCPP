@@ -151,6 +151,7 @@ rotator_min_el: 0         # Minimum elevation for rotator tracking
 | `--rotator` | Enable Hamlib Rotator Control | false |
 | `--refresh` | Force fresh download of TLE data | false |
 | `--time <str>` | Simulate time (Format: "YYYY-MM-DD HH:MM:SS") | Real-time |
+| `--deltaT <sec>` | Update interval in seconds (0.001-60) | 1.0 |
 
 ---
 
@@ -208,7 +209,7 @@ Track ISS with rotator control:
 
 ## Network Services
 
-Visible Ephemeris exposes two web interfaces:
+Visible Ephemeris exposes three network interfaces:
 
 ### Graphical Dashboard: `http://<IP>:8080`
 * Interactive Mercator map with satellite positions and ground tracks
@@ -223,10 +224,48 @@ Visible Ephemeris exposes two web interfaces:
 * Auto-refreshes every second
 * Works on low-bandwidth connections
 
+### Physics Stream: `tcp://<IP>:12346`
+* **Raw TCP streaming** of physics data (satellite positions, look angles, etc.)
+* **Zero-buffer design**: Data is only generated when clients are connected
+* **Real-time streaming**: Pushes updates at the rate set by `--deltaT`
+* **Frame delimiter**: Each frame ends with `\n---END_FRAME---\n`
+
+**Connecting to Physics Stream:**
+```bash
+# Using netcat
+nc localhost 12346
+
+# Using telnet
+telnet localhost 12346
+
+# Using socat (with line buffering)
+socat - TCP:localhost:12346
+```
+
+**Example Output:**
+```
+VISIBLE EPHEMERIS v12.65-CODE-ONLY
+2026-02-23 12:34:56.7 LOC
+OBS: 39.6478, -76.1347 | SHOWN: 5
+
+NAME            AZ       EL      RANGE RR(km/s) VIS   NEXT EVENT
+-------------------------------------------------------------------------
+IRIDIUM 140       83.3     29.2     1271.8    0.092 DAY   LOS 6m 42s
+IRIDIUM 110      243.1     14.2     1899.9    3.752 DAY   AOS 3m 54s
+---END_FRAME---
+```
+
+**Integration Notes:**
+* Connect via TCP to receive continuous updates
+* Parse frames by splitting on `---END_FRAME---`
+* Data format matches terminal display (fixed-width columns)
+* Disconnecting stops data transmission (no buffer accumulation)
+
 **Firewall Configuration:**
 ```bash
 sudo ufw allow 8080
 sudo ufw allow 12345
+sudo ufw allow 12346
 ```
 
 ---

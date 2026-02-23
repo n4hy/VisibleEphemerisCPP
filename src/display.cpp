@@ -34,8 +34,8 @@ namespace ve {
         return last_frame_buffer_;
     }
     
-    void Display::setBlocking(bool blocking) {
-        timeout(blocking ? 100 : 0);
+    void Display::setBlocking(bool blocking, int timeout_ms) {
+        timeout(blocking ? timeout_ms : 0);
     }
     
     Display::InputResult Display::handleInput() {

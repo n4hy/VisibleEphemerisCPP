@@ -31,7 +31,7 @@ namespace ve {
         void update(const std::vector<DisplayRow>& rows, const Observer& obs, const TimePoint& t, int total_tracked, int filter_kept, bool show_all_rf, double min_el, const std::string& time_str);
         InputResult handleInput();
         
-        void setBlocking(bool blocking);
+        void setBlocking(bool blocking, int timeout_ms = 100);
         
         // THREAD SAFE GETTER
         std::string getLastFrame() const; 

@@ -11,6 +11,7 @@
 #include "display.hpp"
 #include "web_server.hpp"
 #include "text_server.hpp"
+#include "physics_server.hpp"
 #include "config_manager.hpp"
 #include "pass_predictor.hpp"
 #include "thread_pool.hpp"
@@ -25,6 +26,7 @@ void print_help() {
               << "  --help, -h       Show help\n"
               << "  --lat <deg>      Override Latitude\n"
               << "  --lon <deg>      Override Longitude\n"
+              << "  --minel <deg>    Minimum elevation for display (default 0)\n"
               << "  --max_sats <N>   Override Max Satellites\n"
               << "  --trail_mins <N> Override Trail Length (+/- minutes)\n"
               << "  --refresh        Force fresh TLE\n"
@@ -315,8 +317,9 @@ int main(int argc, char* argv[]) {
         }
         Logger::log("Loaded " + std::to_string(sats.size()) + " satellites");
 
-        WebServer web_server(8080, tle_mgr, false); 
+        WebServer web_server(8080, tle_mgr, false);
         TextServer text_server(12345);
+        PhysicsServer physics_server(12346);
         
         Observer observer(config.lat, config.lon, config.alt);
         Display display; 
@@ -335,6 +338,7 @@ int main(int argc, char* argv[]) {
 
         web_server.start();
         text_server.start();
+        physics_server.start();
 
         auto last_calc_time = Clock::now();
         bool first_run = true;
@@ -346,11 +350,9 @@ int main(int argc, char* argv[]) {
             auto last_tle_refresh = std::chrono::steady_clock::now();
 
             while(running) {
-                // CALCULATE PHYSICS TIME (Decoupled)
+                // CALCULATE PHYSICS TIME (Decoupled) - with sub-second precision
                 auto elapsed_duration = Clock::now() - system_start_tp;
-                long elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(elapsed_duration).count();
-                std::time_t current_physics_time_t = physics_epoch + elapsed_sec;
-                auto now = std::chrono::system_clock::from_time_t(current_physics_time_t);
+                auto now = std::chrono::system_clock::from_time_t(physics_epoch) + elapsed_duration;
 
                 // AUTO-REFRESH / HOT-RELOAD LOGIC
                 bool perform_reload = false;
@@ -407,16 +409,53 @@ int main(int argc, char* argv[]) {
                 
                 int rejected_apo = 0;
                 int rejected_el = 0;
-                int rejected_vis = 0;
 
                 int selected_norad_id = web_server.getSelectedNoradId();
 
                 for(auto& sat : sats) {
                     if(!running) break;
-                    
+
                     // 1. Strict Decay Filter: Satellites below 80km are considered decayed/invalid
                     if (sat.getApogeeKm() < 80.0) {
                         continue;
+                    }
+
+                    // MAX APOGEE FILTER (cheap check, do early)
+                    if (config.max_apo > 0 && sat.getApogeeKm() > config.max_apo) {
+                        rejected_apo++;
+                        continue;
+                    }
+
+                    // FAST PATH: When visible_only, skip satellites not currently above horizon
+                    // This avoids expensive propagate/lookangle/visibility calculations
+                    if (config.visible_only) {
+                        auto passes = sat.getPredictedPasses();
+
+                        // If we have pass data, use it to quickly check if above horizon
+                        if (!passes.empty()) {
+                            bool above_horizon = false;
+                            bool found_past_event = false;
+
+                            // Find most recent event before now
+                            for (auto it = passes.rbegin(); it != passes.rend(); ++it) {
+                                if (it->time <= now) {
+                                    above_horizon = it->is_aos; // If last event was AOS, we're above horizon
+                                    found_past_event = true;
+                                    break;
+                                }
+                            }
+
+                            // If no past event, check first future event
+                            // If first future event is LOS, satellite is currently above horizon
+                            if (!found_past_event) {
+                                above_horizon = !passes.front().is_aos;
+                            }
+
+                            if (!above_horizon) {
+                                continue; // Skip - not above horizon, can't be visible
+                            }
+                        }
+                        // If passes is empty, fall through and compute (could be GEO or always-visible)
                     }
 
                     auto [pos, vel] = sat.propagate(now);
@@ -435,24 +474,9 @@ int main(int argc, char* argv[]) {
 
                     // 3. User Filters
 
-                    // VISIBILITY FILTER
-                    // If visible_only is TRUE, we skip if NOT visible.
-                    if (config.visible_only && state != VisibilityCalculator::State::VISIBLE) {
-                        rejected_vis++;
-                        continue;
-                    }
-
-                    // MIN ELEVATION FILTER
-                    // When visible_only=false (radio mode), show ALL satellites in the group
-                    // The display layer will color them appropriately (yellow/green/grey)
-                    if (config.visible_only && look.elevation < config.min_el) {
+                    // MIN ELEVATION FILTER (display only if above min_el)
+                    if (look.elevation < config.min_el) {
                         rejected_el++;
-                        continue;
-                    }
-
-                    // MAX APOGEE FILTER
-                    if (config.max_apo > 0 && sat.getApogeeKm() > config.max_apo) {
-                        rejected_apo++;
                         continue;
                     }
 
@@ -559,37 +583,45 @@ int main(int argc, char* argv[]) {
                     state.active_sats = local_sats;
                     state.updated = true;
                 }
-                
-                for(int i=0; i<20; ++i) { if(!running) break; std::this_thread::sleep_for(std::chrono::milliseconds(50)); }
+
+                // Sleep for delta_t seconds, checking running flag periodically
+                int total_ms = static_cast<int>(config.delta_t * 1000);
+                int elapsed = 0;
+                while (elapsed < total_ms && running) {
+                    int sleep_chunk = std::min(50, total_ms - elapsed);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(sleep_chunk));
+                    elapsed += sleep_chunk;
+                }
             }
         });
 
         // MAIN UI LOOP
         while (true) {
-            display.setBlocking(true);
+            int timeout_ms = std::max(1, static_cast<int>(config.delta_t * 1000));
+            display.setBlocking(true, timeout_ms);
             auto input_res = display.handleInput();
             if (input_res == Display::InputResult::SAVE_AND_QUIT) { config_mgr.save(config); running=false; break; }
             else if (input_res == Display::InputResult::QUIT_NO_SAVE) { running=false; break; }
 
-            // CALCULATE CLOCKS
+            // CALCULATE CLOCKS - with sub-second precision
             auto elapsed_duration = Clock::now() - system_start_tp;
             long elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(elapsed_duration).count();
 
-            // 1. Physics Time (UTC-aligned)
-            std::time_t physics_tt = physics_epoch + elapsed_sec;
-            auto physics_now = std::chrono::system_clock::from_time_t(physics_tt);
+            // 1. Physics Time (UTC-aligned) - sub-second precision
+            auto physics_now = std::chrono::system_clock::from_time_t(physics_epoch) + elapsed_duration;
 
-            // 2. Display Time (Face Value-aligned)
+            // 2. Display Time (Face Value-aligned) - for time string display only
             std::time_t display_tt = display_epoch + elapsed_sec;
 
-            // CONSTRUCT STRING
+            // CONSTRUCT STRING - with sub-second display
             std::string time_display_str;
             {
                 std::tm tm_display;
                 gmtime_r(&display_tt, &tm_display);
                 char t_buf[64];
-                std::strftime(t_buf, sizeof(t_buf), "%Y-%m-%d %H:%M:%S LOC", &tm_display);
-                time_display_str = std::string(t_buf);
+                int ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed_duration).count() % 1000;
+                std::strftime(t_buf, sizeof(t_buf), "%Y-%m-%d %H:%M:%S", &tm_display);
+                time_display_str = std::string(t_buf) + "." + std::to_string(ms / 100) + " LOC";
             }
 
             std::vector<DisplayRow> current_rows;
@@ -608,11 +640,13 @@ int main(int argc, char* argv[]) {
                 terminal_rows.resize(terminal_limit);
             }
             display.update(terminal_rows, observer, physics_now, sats.size(), current_rows.size(), !config.visible_only, config.min_el, time_display_str);
-            text_server.updateData(display.getLastFrame()); 
+            text_server.updateData(display.getLastFrame());
+            physics_server.updateData(display.getLastFrame());
         }
 
         web_server.stop();
         text_server.stop();
+        physics_server.stop();
         if(math_thread.joinable()) math_thread.join();
         Logger::log("Shutdown Complete");
 
