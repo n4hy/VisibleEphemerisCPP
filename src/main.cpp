@@ -32,6 +32,7 @@ void print_help() {
               << "  --satsel <list>   Comma-separated Satellite Names (Overrules groupsel)\n"
               << "  --visible <bool> Limit to Optically Visible only (true/false)\n"
               << "  --time <str>     Simulate time (e.g. \"2025-01-01 12:00:00\")\n"
+              << "  --deltaT <sec>   Time increment between calculations (0.001-60, default 1)\n"
               << "\nConfiguration is loaded from config.yaml by default.\n";
 }
 
@@ -222,6 +223,16 @@ int main(int argc, char* argv[]) {
             if (i+1 < argc) {
                 std::string val = argv[++i];
                 config.rotator_control_enabled = (val == "true" || val == "1");
+            }
+        }
+        else if (arg == "--deltaT") {
+            if (i+1 < argc) {
+                double val = std::stod(argv[++i]);
+                if (val < 0.001 || val > 60.0) {
+                    std::cerr << "[WARN] --deltaT must be between 0.001 and 60 seconds. Using default (1.0)." << std::endl;
+                } else {
+                    config.delta_t = val;
+                }
             }
         }
     }

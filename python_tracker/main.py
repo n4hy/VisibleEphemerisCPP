@@ -57,8 +57,14 @@ def main():
     parser.add_argument("--no-visible", action='store_true', help="Show ALL satellites (ignore visibility filter)")
     parser.add_argument("--trail_mins", type=int, default=cm.get('trail_length_mins', 5), help="Trail length in minutes")
     parser.add_argument("--maxapo", "--map_apo", type=float, default=cm.get('max_apo', -1), dest='maxapo', help="Maximum apogee filter (km). Satellites above this are excluded. -1 disables.")
+    parser.add_argument("--deltaT", type=float, default=cm.get('delta_t', 1.0), dest='delta_t', help="Time increment between calculations (0.001-60 seconds, default 1)")
 
     args = parser.parse_args()
+
+    # Validate delta_t range
+    if args.delta_t < 0.001 or args.delta_t > 60.0:
+        print(f"[WARN] --deltaT must be between 0.001 and 60 seconds. Using default (1.0).")
+        args.delta_t = 1.0
 
     # Handle visible_only logic: --no-visible overrides --visible
     if args.no_visible:

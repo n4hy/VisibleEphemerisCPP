@@ -25,6 +25,9 @@ namespace ve {
 
         // Runtime-Only: Time Offset for Display (Input Local vs UTC)
         long manual_time_offset = 0;
+
+        // Time increment between full calculations (seconds)
+        double delta_t = 1.0;
     };
 
     class ConfigManager {

@@ -85,6 +85,11 @@ namespace ve {
             if (data.count("rotator_host")) cfg.rotator_host = data["rotator_host"];
             if (data.count("rotator_port")) cfg.rotator_port = std::stoi(data["rotator_port"]);
             if (data.count("rotator_min_el")) cfg.rotator_min_el = std::stod(data["rotator_min_el"]);
+
+            if (data.count("delta_t")) {
+                double val = std::stod(data["delta_t"]);
+                if (val >= 0.001 && val <= 60.0) cfg.delta_t = val;
+            }
         } catch(...) {
             std::cerr << "[CONFIG] Error parsing config.yaml" << std::endl;
         }
@@ -110,6 +115,7 @@ namespace ve {
         file << "rotator_host: " << config.rotator_host << "\n";
         file << "rotator_port: " << config.rotator_port << "\n";
         file << "rotator_min_el: " << config.rotator_min_el << "\n";
+        file << "delta_t: " << config.delta_t << "\n";
 
         file.close();
     }

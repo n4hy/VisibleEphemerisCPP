@@ -14,7 +14,8 @@ class ConfigManager:
             'visible_only': False,  # False = show all satellites, True = optical mode only
             'show_all_visible': False,  # Legacy compatibility
             'group_selection': "active",
-            'trail_length_mins': 5
+            'trail_length_mins': 5,
+            'delta_t': 1.0
         }
         self.load()
 
