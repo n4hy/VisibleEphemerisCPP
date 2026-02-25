@@ -11,8 +11,8 @@ namespace ve {
         double gmst_0h = 24110.54841 + 8640184.812866 * T + 0.093104 * T * T - 6.2e-6 * T * T * T;
         double ut_hours = (jd - jd_midnight) * 24.0;
         double gmst_now_sec = gmst_0h + (ut_hours * 3600.0 * 1.00273790935);
-        gmst_now_sec = std::fmod(gmst_now_sec, 86400.0);
-        if (gmst_now_sec < 0) gmst_now_sec += 86400.0;
+        gmst_now_sec = std::fmod(gmst_now_sec, SECONDS_PER_DAY);
+        if (gmst_now_sec < 0) gmst_now_sec += SECONDS_PER_DAY;
         return (gmst_now_sec / 240.0) * DEG2RAD;
     }
 
@@ -40,7 +40,9 @@ namespace ve {
         Vector3 obs_vel = getVelocityECI(t);
         Vector3 r = sat_pos - obs_pos;
         Vector3 v = sat_vel - obs_vel;
-        return r.dot(v) / r.magnitude();
+        double mag = r.magnitude();
+        if (mag < 1e-9) return 0.0;  // Avoid division by zero
+        return r.dot(v) / mag;
     }
 
     Observer::LookAngle Observer::calculateLookAngle(const Vector3& sat_eci, const TimePoint& t) const {
@@ -53,8 +55,11 @@ namespace ve {
         double e = -sLS*r.x + cLS*r.y;
         double z = cL*cLS*r.x + cL*sLS*r.y + sL*r.z;
         double range = std::sqrt(s*s + e*e + z*z);
-        double az = std::atan2(e, -s); 
+        double az = std::atan2(e, -s);
         if (az < 0) az += 2*PI;
-        return {az * RAD2DEG, std::asin(z/range) * RAD2DEG, range};
+        // Clamp z/range to [-1, 1] to prevent NaN from asin due to floating-point precision
+        double sin_el = (range > 1e-9) ? z/range : 0.0;
+        sin_el = std::max(-1.0, std::min(1.0, sin_el));
+        return {az * RAD2DEG, std::asin(sin_el) * RAD2DEG, range};
     }
 }

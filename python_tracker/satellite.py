@@ -2,13 +2,22 @@ from skyfield.api import load, EarthSatellite, wgs84
 import datetime
 import math
 
+# Singleton timescale instance to avoid repeated loads
+_timescale = None
+
+def _get_timescale():
+    global _timescale
+    if _timescale is None:
+        _timescale = load.timescale()
+    return _timescale
+
 class Satellite:
     def __init__(self, tle):
         self.name = tle['name']
         self.line1 = tle['line1']
         self.line2 = tle['line2']
 
-        ts = load.timescale()
+        ts = _get_timescale()
         self.skyfield_sat = EarthSatellite(self.line1, self.line2, self.name, ts)
         self.norad_id = self.skyfield_sat.model.satnum
 
@@ -52,9 +61,13 @@ class Satellite:
         except Exception:
             return 0.0
 
+    def is_decayed(self):
+        """Check if satellite appears to have decayed (apogee < 80km)."""
+        return self.apogee < 80.0
+
     def update_position(self, observer, t_now, trail_mins=0):
         # Ensure t_now is a Skyfield Time object
-        ts = load.timescale()
+        ts = _get_timescale()
         if isinstance(t_now, datetime.datetime):
             t = ts.from_datetime(t_now)
         else:
@@ -99,7 +112,7 @@ class Satellite:
 
     def calculate_ground_track(self, t_center, minutes):
         # Generate points +/- minutes
-        ts = load.timescale()
+        ts = _get_timescale()
         points = []
 
         # Optimize: 1 minute steps
@@ -114,8 +127,8 @@ class Satellite:
         lats = sub.latitude.degrees
         lons = sub.longitude.degrees
 
-        for i in range(len(lats)):
-            points.append([lats[i], lons[i]])
+        for lat, lon in zip(lats, lons):
+            points.append([lat, lon])
 
         return points
 
@@ -124,7 +137,7 @@ class Satellite:
         Computes pass events (rise/culminate/set) for the given duration.
         NOTE: This is computationally expensive and should be run in a background thread.
         """
-        ts = load.timescale()
+        ts = _get_timescale()
         t0 = t_start_ts
         t1 = ts.from_datetime(t_start_ts.utc_datetime() + datetime.timedelta(days=duration_days))
 

@@ -1,4 +1,5 @@
 #include "satellite.hpp"
+#include "logger.hpp"
 #include <iostream>
 #include <sstream>
 #include <ctime>
@@ -18,10 +19,16 @@ namespace ve {
             else if (name_ == "MOON") norad_id_ = -2;
             else norad_id_ = static_cast<int>(tle_object_->NoradNumber());
 
-        } catch (...) { norad_id_ = 0; }
+        } catch (const std::exception& e) {
+            Logger::log("Satellite TLE parse error for '" + name_ + "': " + e.what());
+            norad_id_ = 0;
+        } catch (...) {
+            Logger::log("Satellite TLE parse error for '" + name_ + "': unknown exception");
+            norad_id_ = 0;
+        }
     }
 
-    Satellite::Satellite(Satellite&& other) noexcept 
+    Satellite::Satellite(Satellite&& other) noexcept
         : name_(std::move(other.name_)),
           norad_id_(other.norad_id_),
           tle_object_(std::move(other.tle_object_)),
@@ -29,7 +36,7 @@ namespace ve {
           full_track_(std::move(other.full_track_)),
           predicted_passes_(std::move(other.predicted_passes_))
     {
-        is_computing.store(other.is_computing.load());
+        is_computing.store(std::atomic_exchange(&other.is_computing, false));
     }
 
     int Satellite::getTleEpochYear() const { return tle_object_ ? tle_object_->Epoch().Year() : 0; }
@@ -47,10 +54,9 @@ namespace ve {
     double Satellite::getApogeeKm() const {
         if (!tle_object_) return 0.0;
         try {
-            double mm = tle_object_->MeanMotion(); 
-            double n = mm * 2.0 * PI / 86400.0; 
-            double mu = 398600.4418; 
-            double a = std::pow(mu / (n*n), 1.0/3.0); 
+            double mm = tle_object_->MeanMotion();
+            double n = mm * 2.0 * PI / SECONDS_PER_DAY;
+            double a = std::pow(EARTH_MU / (n*n), 1.0/3.0);
             double e = tle_object_->Eccentricity();
             return a * (1 + e) - EARTH_RADIUS_KM;
         } catch(...) { return 0.0; }
@@ -61,8 +67,9 @@ namespace ve {
         try {
             std::lock_guard<std::mutex> lock(sat_mutex_);
             std::time_t tt = Clock::to_time_t(t);
-            std::tm* gmt = std::gmtime(&tt);
-            libsgp4::DateTime dt(gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec);
+            std::tm gmt;
+            gmtime_r(&tt, &gmt);
+            libsgp4::DateTime dt(gmt.tm_year + 1900, gmt.tm_mon + 1, gmt.tm_mday, gmt.tm_hour, gmt.tm_min, gmt.tm_sec);
             libsgp4::Eci eci = sgp4_object_->FindPosition(dt);
             libsgp4::Vector pos = eci.Position(); libsgp4::Vector vel = eci.Velocity();
             return {{pos.x, pos.y, pos.z}, {vel.x, vel.y, vel.z}};
@@ -74,8 +81,9 @@ namespace ve {
         try {
             std::lock_guard<std::mutex> lock(sat_mutex_);
             std::time_t tt = Clock::to_time_t(t);
-            std::tm* gmt = std::gmtime(&tt);
-            libsgp4::DateTime dt(gmt->tm_year + 1900, gmt->tm_mon + 1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec);
+            std::tm gmt;
+            gmtime_r(&tt, &gmt);
+            libsgp4::DateTime dt(gmt.tm_year + 1900, gmt.tm_mon + 1, gmt.tm_mday, gmt.tm_hour, gmt.tm_min, gmt.tm_sec);
             libsgp4::Eci eci = sgp4_object_->FindPosition(dt);
             libsgp4::CoordGeodetic geo = eci.ToGeodetic();
             return { geo.latitude * RAD2DEG, geo.longitude * RAD2DEG, geo.altitude };

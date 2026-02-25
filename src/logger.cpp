@@ -11,7 +11,9 @@ namespace ve {
         std::lock_guard<std::mutex> lock(log_mutex_);
         if (log_file_.is_open()) {
             std::time_t now = std::time(nullptr);
-            log_file_ << "[" << std::put_time(std::localtime(&now), "%T") << "] " << msg << std::endl;
+            std::tm local_tm;
+            localtime_r(&now, &local_tm);
+            log_file_ << "[" << std::put_time(&local_tm, "%T") << "] " << msg << std::endl;
             log_file_.flush();
         }
     }

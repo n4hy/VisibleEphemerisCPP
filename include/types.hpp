@@ -24,19 +24,23 @@ namespace ve {
 
     struct Geodetic { double lat_deg; double lon_deg; double alt_km; };
 
-    constexpr double EARTH_RADIUS_KM = 6378.137; 
+    constexpr double EARTH_RADIUS_KM = 6378.137;
     constexpr double PI = 3.14159265358979323846;
     constexpr double DEG2RAD = PI / 180.0;
     constexpr double RAD2DEG = 180.0 / PI;
+    constexpr double SECONDS_PER_DAY = 86400.0;
+    constexpr double EARTH_MU = 398600.4418;  // Gravitational parameter (km^3/s^2)
+    constexpr double DECAY_ALTITUDE_KM = 80.0;  // Satellites below this apogee are considered decayed
 
     inline double toJulianDate(const TimePoint& t) {
         std::time_t tt = Clock::to_time_t(t);
-        std::tm* gmt = std::gmtime(&tt);
-        int Y = gmt->tm_year + 1900; int M = gmt->tm_mon + 1; int D = gmt->tm_mday;
+        std::tm gmt;
+        gmtime_r(&tt, &gmt);
+        int Y = gmt.tm_year + 1900; int M = gmt.tm_mon + 1; int D = gmt.tm_mday;
         if (M <= 2) { Y -= 1; M += 12; }
         int A = Y / 100; int B = 2 - A + (A / 4);
         double jd = std::floor(365.25 * (Y + 4716)) + std::floor(30.6001 * (M + 1)) + D + B - 1524.5;
-        double fraction = (gmt->tm_hour + gmt->tm_min/60.0 + gmt->tm_sec/3600.0) / 24.0;
+        double fraction = (gmt.tm_hour + gmt.tm_min/60.0 + gmt.tm_sec/3600.0) / 24.0;
         return jd + fraction;
     }
 

@@ -3,10 +3,17 @@ import time
 import datetime
 import os
 import sys
-import select
-import termios
-import tty
+import subprocess
 import concurrent.futures
+
+# Platform-specific imports for keyboard handling
+if sys.platform != 'win32':
+    import select
+    import termios
+    import tty
+    HAS_TERMIOS = True
+else:
+    HAS_TERMIOS = False
 
 from tle_manager import TLEManager
 from satellite import Satellite
@@ -17,18 +24,25 @@ import text_server
 
 def clear_screen():
     """Clears the console screen."""
-    os.system('cls' if os.name == 'nt' else 'clear')
+    if os.name == 'nt':
+        subprocess.run(['cls'], shell=True, check=False)
+    else:
+        subprocess.run(['clear'], check=False)
 
 class KeyPoller:
     def __enter__(self):
-        self.old_settings = termios.tcgetattr(sys.stdin)
-        tty.setcbreak(sys.stdin.fileno())
+        if HAS_TERMIOS:
+            self.old_settings = termios.tcgetattr(sys.stdin)
+            tty.setcbreak(sys.stdin.fileno())
         return self
 
     def __exit__(self, type, value, traceback):
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_settings)
+        if HAS_TERMIOS:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_settings)
 
     def poll(self):
+        if not HAS_TERMIOS:
+            return None  # Windows: no non-blocking stdin support via termios
         if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
             return sys.stdin.read(1)
         return None
@@ -126,6 +140,10 @@ def main():
                 web_sats_data = []        # For Web API
 
                 for sat in satellites:
+                    # Skip decayed satellites (apogee < 80km) - matches C++ behavior
+                    if sat.is_decayed():
+                        continue
+
                     # Update Satellite State
                     sat.update_position(observer, t_now_ts, args.trail_mins)
 
@@ -204,14 +222,16 @@ def main():
                 if args.maxsats > 0 and len(visible_sats_display) > args.maxsats:
                     visible_sats_display = visible_sats_display[:args.maxsats]
 
-                # Update Shared Web State
-                web_server.tracker_state['config'] = {
-                    'lat': args.lat, 'lon': args.lon, 'min_el': args.minel,
-                    'max_apo': args.maxapo, 'show_all': not args.visible_only,
-                    'groups': args.groupsel,
-                    'sun_lat': sun_lat, 'sun_lon': sun_lon
-                }
-                web_server.tracker_state['satellites'] = web_sats_data
+                # Update Shared Web State (thread-safe)
+                web_server.update_tracker_state(
+                    config={
+                        'lat': args.lat, 'lon': args.lon, 'min_el': args.minel,
+                        'max_apo': args.maxapo, 'show_all': not args.visible_only,
+                        'groups': args.groupsel,
+                        'sun_lat': sun_lat, 'sun_lon': sun_lon
+                    },
+                    satellites=web_sats_data
+                )
 
                 # --- Build Output ---
                 mode_str = "SHOW ALL (Radio Mode)" if not args.visible_only else "OPTICAL MODE (Sunlit Only)"
@@ -271,9 +291,11 @@ def main():
                     'alt': args.alt,
                     'min_el': args.minel,
                     'max_sats': args.maxsats,
+                    'max_apo': args.maxapo,
                     'visible_only': args.visible_only,
                     'group_selection': args.groupsel,
-                    'trail_length_mins': args.trail_mins
+                    'trail_length_mins': args.trail_mins,
+                    'delta_t': args.delta_t
                 }
                 cm.save(new_config)
                 break
@@ -282,17 +304,17 @@ def main():
                 break
 
         if txt_server: txt_server.stop()
-        executor.shutdown(wait=False)
+        executor.shutdown(wait=True)
 
     except KeyboardInterrupt:
         print("\nTracker stopped by user.")
         if txt_server: txt_server.stop()
-        if 'executor' in locals(): executor.shutdown(wait=False)
+        if 'executor' in locals(): executor.shutdown(wait=True)
         sys.exit(0)
     except Exception as e:
         print(f"\nAn unexpected error occurred: {e}", file=sys.stderr)
         if 'txt_server' in locals() and txt_server: txt_server.stop()
-        if 'executor' in locals(): executor.shutdown(wait=False)
+        if 'executor' in locals(): executor.shutdown(wait=True)
         raise
 
 if __name__ == "__main__":

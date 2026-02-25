@@ -32,7 +32,7 @@ class TextServer:
         if self.server_socket:
             try:
                 self.server_socket.close()
-            except:
+            except OSError:
                 pass
 
     def update_data(self, text):
@@ -57,8 +57,8 @@ class TextServer:
                     # Drain request
                     try:
                         client_sock.recv(4096)
-                    except:
-                        pass # Ignore read errors, we just want to send
+                    except (socket.timeout, socket.error, OSError):
+                        pass  # Ignore read errors, we just want to send
 
                     with self.lock:
                         body_content = self.current_text

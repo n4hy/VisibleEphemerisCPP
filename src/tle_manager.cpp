@@ -97,11 +97,11 @@ namespace ve {
         if (!file.is_open()) return sats;
         while (std::getline(file, line)) {
             line = trim(line); if (line.length() < 2) continue;
-            if (line.substr(0, 2) == "1 " && !name.empty()) {
+            if (line.length() >= 2 && line.substr(0, 2) == "1 " && !name.empty()) {
                 l1 = line;
                 if (std::getline(file, l2)) {
                     l2 = trim(l2);
-                    if (l2.substr(0, 2) == "2 ") {
+                    if (l2.length() >= 2 && l2.substr(0, 2) == "2 ") {
                         name.erase(name.find_last_not_of(" \n\r\t")+1);
                         try { sats.emplace_back(name, l1, l2); } catch(...) {}
                         name = "";
@@ -226,10 +226,11 @@ namespace ve {
         std::string line, name, l1, l2;
         while (std::getline(file, line)) {
             line = trim(line); if (line.length() < 2) continue;
-            if (line.substr(0, 2) == "1 " && !name.empty()) {
+            if (line.length() >= 2 && line.substr(0, 2) == "1 " && !name.empty()) {
                 l1 = line;
                 if (std::getline(file, l2)) {
                     l2 = trim(l2);
+                    if (l2.length() < 2) { name = ""; continue; }
                     std::string check_name = name;
                     std::transform(check_name.begin(), check_name.end(), check_name.begin(), ::toupper);
                     bool match = false;

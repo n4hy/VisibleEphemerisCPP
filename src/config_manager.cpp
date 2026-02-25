@@ -33,6 +33,10 @@ namespace ve {
     std::map<std::string, std::string> ConfigManager::parse() {
         std::map<std::string, std::string> data;
         std::ifstream file(filename_);
+        if (!file.is_open()) {
+            std::cerr << "[CONFIG] Failed to open config file: " << filename_ << std::endl;
+            return data;
+        }
         std::string line;
         while(std::getline(file, line)) {
             size_t delim = line.find(':');

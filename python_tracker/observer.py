@@ -1,15 +1,29 @@
 import datetime
-from skyfield.api import load, Topos, wgs84, Time
-from satellite import Satellite
-from tle_manager import TLEManager
+from skyfield.api import load, wgs84, Time
+
+# Singleton ephemeris to avoid loading 16MB file multiple times
+_ephemeris = None
+_timescale = None
+
+def _get_ephemeris():
+    global _ephemeris
+    if _ephemeris is None:
+        _ephemeris = load('de421.bsp')
+    return _ephemeris
+
+def _get_timescale():
+    global _timescale
+    if _timescale is None:
+        _timescale = load.timescale()
+    return _timescale
 
 class Observer:
     def __init__(self, lat_deg, lon_deg, alt_km):
-        self.ts = load.timescale()
+        self.ts = _get_timescale()
         # Use wgs84 for better compatibility with modern skyfield features if needed,
         # but Topos is fine for look angles.
         self.location = wgs84.latlon(lat_deg, lon_deg, elevation_m=alt_km * 1000)
-        self.eph = load('de421.bsp') # Needed for Sun/Moon
+        self.eph = _get_ephemeris()  # Shared singleton ephemeris
 
     def _ensure_time(self, dt):
         if isinstance(dt, Time):

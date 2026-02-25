@@ -5,6 +5,26 @@ import time
 class TLEManager:
     CELESTRAK_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP={group}&FORMAT=tle"
 
+    # Valid Celestrak group names (matching C++ whitelist)
+    VALID_GROUPS = {
+        # Special
+        "active", "visual", "stations", "last-30-days", "analyst",
+        # Weather
+        "weather", "noaa", "goes", "resource", "sarsat", "dmc", "tdrss", "argos", "planet", "spire",
+        # Comm
+        "geo", "intelsat", "ses", "iridium", "iridium-NEXT", "starlink", "oneweb", "orbcomm",
+        "globalstar", "swpc", "amateur", "x-comm", "other-comm", "satnogs", "gorizont", "raduga", "molniya",
+        # Nav
+        "gnss", "gps-ops", "glo-ops", "galileo", "beidou", "sbas", "nnss", "musson",
+        # Science
+        "science", "geodetic", "engineering", "education",
+        # Misc
+        "military", "radar", "cubesat", "other"
+    }
+
+    # Maximum file size for anti-poison protection (2MB, except for active.txt)
+    MAX_FILE_SIZE = 2 * 1024 * 1024
+
     def __init__(self, cache_dir="./tle_cache"):
         self.cache_dir = cache_dir
         if not os.path.exists(self.cache_dir):
@@ -14,6 +34,17 @@ class TLEManager:
         cache_file = os.path.join(self.cache_dir, f"{group}.txt")
         # Check if file exists and is less than 24 hours (86400 seconds) old
         if os.path.exists(cache_file):
+            # Anti-poison check: file size limit (except for active.txt)
+            file_size = os.path.getsize(cache_file)
+            if group != "active" and file_size > self.MAX_FILE_SIZE:
+                print(f"[CACHE] CORRUPT: File too large for group '{group}' ({file_size} bytes). Deleting.")
+                os.remove(cache_file)
+                return None
+            if file_size == 0:
+                print(f"[CACHE] Empty cache file for '{group}'. Deleting.")
+                os.remove(cache_file)
+                return None
+
             age = time.time() - os.path.getmtime(cache_file)
             if age < 86400:
                 print(f"[CACHE] Found fresh data for '{group}' (Age: {age/3600:.1f}h)")
@@ -58,6 +89,11 @@ class TLEManager:
         groups = [g.strip() for g in groups_str.split(',')]
         all_tles = []
         for group in groups:
+            # Validate group name (matching C++ whitelist behavior)
+            if group not in self.VALID_GROUPS:
+                print(f"[ERROR] Unknown Group Name: [{group}]. Skipping.")
+                continue
+
             tle_data = self._get_tle_from_cache(group)
 
             if not tle_data:

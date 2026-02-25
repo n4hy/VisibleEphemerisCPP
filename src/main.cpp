@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <csignal>
+#include <unordered_map>
 #include "satellite.hpp"
 #include "observer.hpp"
 #include "visibility.hpp"
@@ -406,7 +407,18 @@ int main(int argc, char* argv[]) {
 
                 std::vector<DisplayRow> local_rows;
                 std::vector<Satellite*> local_sats;
-                
+
+                // Pre-allocate vectors to avoid reallocations
+                local_rows.reserve(sats.size());
+                local_sats.reserve(sats.size());
+
+                // Build lookup map for O(1) satellite access by NORAD ID
+                std::unordered_map<int, Satellite*> sat_lookup;
+                sat_lookup.reserve(sats.size());
+                for (auto& s : sats) {
+                    sat_lookup[s.getNoradId()] = &s;
+                }
+
                 int rejected_apo = 0;
                 int rejected_el = 0;
 
@@ -415,8 +427,8 @@ int main(int argc, char* argv[]) {
                 for(auto& sat : sats) {
                     if(!running) break;
 
-                    // 1. Strict Decay Filter: Satellites below 80km are considered decayed/invalid
-                    if (sat.getApogeeKm() < 80.0) {
+                    // 1. Strict Decay Filter: Satellites below threshold are considered decayed/invalid
+                    if (sat.getApogeeKm() < DECAY_ALTITUDE_KM) {
                         continue;
                     }
 
@@ -562,18 +574,11 @@ int main(int argc, char* argv[]) {
                 local_sats.clear();
                 local_sats.reserve(local_rows.size());
 
-                // Create a lookup map for speed? Or just brute force?
-                // Brute force search in 'sats' for each 'row' is O(N*M). N=100, M=5000. 500,000 ops. Fine.
-                // Better: Create a map of ID -> Satellite* first.
-                // Even Better: We know 'sats' indices? No.
-                // Just iterate:
+                // Use pre-built lookup map for O(1) access
                 for(const auto& r : local_rows) {
-                    // Find sat with r.norad_id in 'sats'
-                    for(auto& s : sats) {
-                        if (s.getNoradId() == r.norad_id) {
-                            local_sats.push_back(&s);
-                            break;
-                        }
+                    auto it = sat_lookup.find(r.norad_id);
+                    if (it != sat_lookup.end()) {
+                        local_sats.push_back(it->second);
                     }
                 }
 
