@@ -90,10 +90,10 @@ namespace ve {
         snprintf(buf, sizeof(buf), hdr_fmt, "NAME", "AZ", "EL", "RANGE", "RR(km/s)", "VIS", "NEXT EVENT");
         ss << buf << "\n-------------------------------------------------------------------------\n";
 
-        // --- TEXT BUFFER GENERATION (SORTED BY NAME) ---
+        // --- TEXT BUFFER GENERATION (SORTED BY EL DESCENDING) ---
         std::vector<DisplayRow> text_rows = rows;
         std::sort(text_rows.begin(), text_rows.end(), [](const DisplayRow& a, const DisplayRow& b) {
-            return a.name < b.name;
+            return a.el > b.el;
         });
 
         for (const auto& r : text_rows) {
