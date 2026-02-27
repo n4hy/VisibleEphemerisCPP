@@ -57,7 +57,15 @@ def main():
 
     cm = ConfigManager(config_path)
 
-    parser = argparse.ArgumentParser(description="A simple Python satellite tracker using Skyfield.")
+    parser = argparse.ArgumentParser(
+        description="A simple Python satellite tracker using Skyfield.",
+        epilog="""Network Ports:
+  Port 8080   - Web Dashboard / Mission Planner UI (HTTP)
+  Port 12345  - Terminal Mirror Server (HTTP text display)
+
+Configuration is loaded from config.yaml by default.""",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--lat", type=float, default=cm.get('lat', 39.5478), help="Observer Latitude (dd)")
     parser.add_argument("--lon", type=float, default=cm.get('lon', -76.0916), help="Observer Longitude (dd)")
     parser.add_argument("--alt", type=float, default=cm.get('alt', 0.1), help="Observer Altitude (km)")
