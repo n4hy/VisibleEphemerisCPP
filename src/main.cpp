@@ -41,7 +41,9 @@ void print_help() {
               << "  --radio <bool>    Enable radio control (true/false, requires --satsel)\n"
               << "  --rotator <bool>  Enable rotator control (true/false, requires --satsel)\n"
               << "  --groupbuild      Enter Mission Planner builder mode\n"
-              << "\nNetwork Ports:\n"
+              << "  --port <A,B,C>    Override network ports (default: 8080,12345,12346)\n"
+              << "                    Use empty values to keep defaults (e.g. --port ,,12349)\n"
+              << "\nNetwork Ports (defaults):\n"
               << "  Port 8080         Web Dashboard / Mission Planner UI (HTTP)\n"
               << "  Port 12345        Terminal Mirror Server (HTTP text display)\n"
               << "  Port 12346        Physics Stream Server (TCP, JSON satellite data)\n"
@@ -155,6 +157,11 @@ int main(int argc, char* argv[]) {
     std::chrono::seconds time_offset(0);
     bool sim_time = false;
 
+    // Network ports (defaults)
+    int port_web = 8080;
+    int port_text = 12345;
+    int port_physics = 12346;
+
     // DECOUPLED CLOCK VARIABLES
     std::time_t display_epoch = 0;  // Start time (Face Value)
     std::time_t physics_epoch = 0;  // Start time (System UTC)
@@ -247,6 +254,30 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
+        else if (arg == "--port") {
+            if (i+1 < argc) {
+                std::string port_str = argv[++i];
+                // Parse comma-separated ports: A,B,C where empty values keep defaults
+                std::vector<std::string> parts;
+                size_t start = 0, end;
+                while ((end = port_str.find(',', start)) != std::string::npos) {
+                    parts.push_back(port_str.substr(start, end - start));
+                    start = end + 1;
+                }
+                parts.push_back(port_str.substr(start));
+
+                // Apply non-empty values to respective ports
+                if (parts.size() >= 1 && !parts[0].empty()) {
+                    port_web = std::stoi(parts[0]);
+                }
+                if (parts.size() >= 2 && !parts[1].empty()) {
+                    port_text = std::stoi(parts[1]);
+                }
+                if (parts.size() >= 3 && !parts[2].empty()) {
+                    port_physics = std::stoi(parts[2]);
+                }
+            }
+        }
     }
 
     // ENFORCE CONTROL LOGIC: Disable hardware if >1 satellite selected
@@ -301,8 +332,8 @@ int main(int argc, char* argv[]) {
 
         // --- PHASE 1: BUILDER MODE ---
         if (builder_mode) {
-            std::cout << "Starting Mission Planner UI on port 8080..." << std::endl;
-            WebServer builder_server(8080, tle_mgr, true);
+            std::cout << "Starting Mission Planner UI on port " << port_web << "..." << std::endl;
+            WebServer builder_server(port_web, tle_mgr, true);
             builder_server.runBlocking(); 
             std::cout << "Configuration saved. Launching Tracker..." << std::endl;
             config = config_mgr.load(); 
@@ -327,9 +358,9 @@ int main(int argc, char* argv[]) {
         }
         Logger::log("Loaded " + std::to_string(sats.size()) + " satellites");
 
-        WebServer web_server(8080, tle_mgr, false);
-        TextServer text_server(12345);
-        PhysicsServer physics_server(12346);
+        WebServer web_server(port_web, tle_mgr, false);
+        TextServer text_server(port_text);
+        PhysicsServer physics_server(port_physics);
         
         Observer observer(config.lat, config.lon, config.alt);
         Display display; 
