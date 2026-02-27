@@ -152,6 +152,7 @@ rotator_min_el: 0         # Minimum elevation for rotator tracking
 | `--refresh` | Force fresh download of TLE data | false |
 | `--time <str>` | Simulate time (Format: "YYYY-MM-DD HH:MM:SS") | Real-time |
 | `--deltaT <sec>` | Update interval in seconds (0.001-60) | 1.0 |
+| `--port <A,B,C>` | Override network ports (web,text,physics) | 8080,12345,12346 |
 
 ---
 
@@ -195,6 +196,19 @@ Track ISS with rotator control:
 ./VisibleEphemeris --satsel ISS --rotator
 ```
 
+### 6. Custom Network Ports
+Run on alternative ports (useful for multiple instances or firewall restrictions):
+```bash
+# Change all three ports
+./VisibleEphemeris --port 9080,9345,9346
+
+# Change only the web dashboard port
+./VisibleEphemeris --port 9080
+
+# Change only the physics stream port (keep others at defaults)
+./VisibleEphemeris --port ,,9346
+```
+
 ---
 
 ## Keyboard Controls
@@ -209,9 +223,9 @@ Track ISS with rotator control:
 
 ## Network Services
 
-Visible Ephemeris exposes three network interfaces:
+Visible Ephemeris exposes three network interfaces. Ports can be overridden with the `--port` argument using comma-separated values (e.g., `--port 9000,9001,9002`). Use empty values to keep defaults (e.g., `--port ,,12349` changes only the physics port).
 
-### Graphical Dashboard: `http://<IP>:8080`
+### Graphical Dashboard: `http://<IP>:8080` (default)
 * Interactive Mercator map with satellite positions and ground tracks
 * Polar skyplot (toggle with MAP/SKY button)
 * Sortable satellite table
@@ -219,12 +233,12 @@ Visible Ephemeris exposes three network interfaces:
 * Solar terminator visualization
 * Satellite footprint radius for selected satellite
 
-### Text Mirror: `http://<IP>:12345`
+### Text Mirror: `http://<IP>:12345` (default)
 * Lightweight HTML reflection of terminal output
 * Auto-refreshes every second
 * Works on low-bandwidth connections
 
-### Physics Stream: `tcp://<IP>:12346`
+### Physics Stream: `tcp://<IP>:12346` (default)
 * **Raw TCP streaming** of physics data (satellite positions, look angles, etc.)
 * **Zero-buffer design**: Data is only generated when clients are connected
 * **Real-time streaming**: Pushes updates at the rate set by `--deltaT`
@@ -261,7 +275,7 @@ IRIDIUM 110      243.1     14.2     1899.9    3.752 DAY   AOS 3m 54s
 * Data format matches terminal display (fixed-width columns)
 * Disconnecting stops data transmission (no buffer accumulation)
 
-**Firewall Configuration:**
+**Firewall Configuration** (adjust if using `--port`):
 ```bash
 sudo ufw allow 8080
 sudo ufw allow 12345
