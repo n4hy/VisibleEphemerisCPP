@@ -430,6 +430,7 @@ int main(int argc, char* argv[]) {
 
                 int rejected_apo = 0;
                 int rejected_el = 0;
+                int rejected_vis = 0;
 
                 int selected_norad_id = web_server.getSelectedNoradId();
 
@@ -494,9 +495,17 @@ int main(int argc, char* argv[]) {
                     auto state = VisibilityCalculator::calculateState(pos, observer.getPositionECI(now), now, look.elevation);
 
                     // 3. User Filters
+                    // When visible_only=false (radio mode): Show ALL satellites, display layer colors them
+                    // When visible_only=true (optical mode): Filter to only sunlit sats above min_el
 
-                    // MIN ELEVATION FILTER (display only if above min_el)
-                    if (look.elevation < config.min_el) {
+                    // VISIBILITY FILTER (only in optical mode)
+                    if (config.visible_only && state != VisibilityCalculator::State::VISIBLE) {
+                        rejected_vis++;
+                        continue;
+                    }
+
+                    // MIN ELEVATION FILTER (only in optical mode)
+                    if (config.visible_only && look.elevation < config.min_el) {
                         rejected_el++;
                         continue;
                     }
