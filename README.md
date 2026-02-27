@@ -309,6 +309,39 @@ Multiple groups can be combined: `--groupsel amateur,weather,stations`
 
 ---
 
+## Testing
+
+### Functional Equivalence Test (Python vs C++)
+
+A comprehensive equivalence test verifies that the Python (Skyfield) and C++ (libsgp4) implementations produce matching orbital calculations. The test compiles a minimal C++ test harness, runs both engines against the same TLE data, observer location, and fixed UTC time, then compares results.
+
+**Running the test:**
+```bash
+# From project root
+python_tracker/.venv/bin/python tests/test_equivalence.py
+```
+
+**What it tests:**
+| Metric | Tolerance | Typical Difference |
+|:-------|:----------|:-------------------|
+| Azimuth / Elevation | 0.15 deg | < 0.001 deg |
+| Slant Range | 2.0 km | < 0.03 km |
+| Sub-satellite Lat/Lon | 0.05 deg | < 0.001 deg |
+| Satellite Altitude | 1.0 km | < 0.002 km |
+| Apogee | 1.0 km | < 0.001 km |
+| Sun Position | 0.5 deg | < 0.005 deg |
+| Visibility State | string match | see note below |
+
+**Test satellites:** ISS (LEO, ~420 km), NOAA 19 (polar, ~860 km), GPS BIIR-2 (MEO, ~20,200 km).
+
+**Known visibility discrepancy:** Python uses Skyfield's `is_sunlit()` with JPL DE421 ephemeris for observer darkness. C++ uses a Meeus analytical sun model with a hard -6 degree civil twilight cutoff. Near the terminator boundary, these models may disagree on whether the observer is "dark enough," causing Python to report `YES` (visible) while C++ reports `DAY` (daylight). The satellite illumination calculation itself agrees between both implementations.
+
+**Additional unit tests:**
+- Apogee computation from TLE orbital elements (Kepler's third law)
+- Decay detection (80 km apogee threshold)
+
+---
+
 ## License & Credits
 
 * **Author**: Dr. Robert W. McGwier, PhD (N4HY)
