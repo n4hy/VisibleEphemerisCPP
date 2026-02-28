@@ -21,6 +21,7 @@ from observer import Observer
 from config_manager import ConfigManager
 import web_server
 import text_server
+import physics_server
 
 def clear_screen():
     """Clears the console screen."""
@@ -62,6 +63,7 @@ def main():
         epilog="""Network Ports:
   Port 8080   - Web Dashboard / Mission Planner UI (HTTP)
   Port 12345  - Terminal Mirror Server (HTTP text display)
+  Port 12346  - Physics Stream Server (TCP, for tracking_client.py)
 
 Configuration is loaded from config.yaml by default.""",
         formatter_class=argparse.RawDescriptionHelpFormatter
@@ -123,6 +125,15 @@ Configuration is loaded from config.yaml by default.""",
     except Exception as e:
         print(f"Failed to start TextServer: {e}")
         txt_server = None
+
+    # Start Physics Server (TCP stream for tracking_client.py)
+    print("Starting Physics Stream on port 12346...")
+    try:
+        phys_server = physics_server.PhysicsServer(12346)
+        phys_server.start()
+    except Exception as e:
+        print(f"Failed to start PhysicsServer: {e}")
+        phys_server = None
 
     print("Starting tracker... Press 'q' to quit.")
     time.sleep(2)
@@ -205,6 +216,7 @@ Configuration is loaded from config.yaml by default.""",
                             "v": sat.visibility,
                             "next": sat.next_event,
                             "apo": sat.apogee,
+                            "f": sat.flare_status,
                             "trail": sat.trail
                         }
                         web_sats_data.append(web_data)
@@ -214,8 +226,14 @@ Configuration is loaded from config.yaml by default.""",
                             'az': sat.az,
                             'el': sat.el,
                             'range': sat.range,
+                            'range_rate': sat.range_rate,
                             'vis': sat.visibility,
-                            'next': sat.next_event
+                            'next': sat.next_event,
+                            'norad_id': sat.norad_id,
+                            'lat': sat.lat,
+                            'lon': sat.lon,
+                            'apogee': sat.apogee,
+                            'flare_status': sat.flare_status
                         })
 
                 # Sort for display (by elevation, highest first)
@@ -248,8 +266,10 @@ Configuration is loaded from config.yaml by default.""",
                 header = f"Observer: {args.lat:.2f}, {args.lon:.2f} | {mode_str} | {len(visible_sats_display)}/{len(satellites)} | {t_now.strftime('%H:%M:%S UTC')}"
                 output_lines.append(header)
                 output_lines.append("-" * len(header))
-                output_lines.append(f"{'Name':<20} {'Az':>6} {'El':>6} {'Range':>10} {'Vis':>4} {'Next Event':>15}")
-                output_lines.append(f"{'='*20} {'='*6} {'='*6} {'='*10} {'='*4} {'='*15}")
+                # Match C++ format: NAME AZ EL RANGE RR VIS NEXT_EVENT NORAD LAT LON APOGEE FLARE
+                col_header = f"{'NAME':<15} {'AZ':>8} {'EL':>8} {'RANGE':>10} {'RR':>8} {'VIS':>5} {'NEXT EVENT':<12} {'NORAD':>8} {'LAT':>10} {'LON':>10} {'APOGEE':>10} {'FLARE':>6}"
+                output_lines.append(col_header)
+                output_lines.append("-" * len(col_header))
 
                 if not visible_sats_display:
                     output_lines.append("No satellites matching criteria.")
@@ -262,9 +282,13 @@ Configuration is loaded from config.yaml by default.""",
                     for line in output_lines: print(line)
 
                     for i, s in enumerate(visible_sats_display):
-                        # Truncate name
-                        name_str = (s['name'][:19] + '..') if len(s['name']) > 19 else s['name']
-                        line = f"{name_str:<20} {s['az']:6.1f} {s['el']:6.1f} {s['range']:10.0f} {s['vis']:>4} {s['next']:>15}"
+                        # Truncate name to match C++ format (14 chars + potential F indicator)
+                        name_str = s['name'][:14]
+                        if s['flare_status'] > 0:
+                            name_str += " F"
+
+                        # Match C++ format exactly
+                        line = f"{name_str:<15} {s['az']:8.1f} {s['el']:8.1f} {s['range']:10.1f} {s['range_rate']:8.3f} {s['vis']:>5} {s['next']:<12} {s['norad_id']:8d} {s['lat']:10.4f} {s['lon']:10.4f} {s['apogee']:10.1f} {s['flare_status']:6d}"
 
                         if i < limit_console:
                             print(line)
@@ -281,12 +305,33 @@ Configuration is loaded from config.yaml by default.""",
                 print("\n" + ("-" * len(header)))
                 print(f"Web UI running at http://localhost:8080")
                 print(f"Text Mirror running at http://localhost:12345")
+                print(f"Physics Stream running at localhost:12346 (TCP)")
                 print("Press 'q' to quit.")
 
                 # Update TextServer
                 if txt_server: txt_server.update_data("\n".join(output_lines))
 
-                time.sleep(1)
+                # Update PhysicsServer with C++-compatible frame format
+                if phys_server:
+                    physics_lines = []
+                    physics_lines.append("VISIBLE EPHEMERIS v12.65-CODE-ONLY")
+                    physics_lines.append(t_now.strftime("%Y-%m-%d %H:%M:%S.0") + " LOC")
+                    physics_lines.append(f"OBS: {args.lat}, {args.lon} | SHOWN: {len(visible_sats_display)}")
+                    physics_lines.append("")
+                    # Header matching C++ format
+                    physics_lines.append(f"{'NAME':<15} {'AZ':>8} {'EL':>8} {'RANGE':>10} {'RR(km/s)':>8} {'VIS':>5} {'NEXT EVENT':<12} {'NORAD':>8} {'LAT':>10} {'LON':>10} {'APOGEE':>10} {'FLARE':>6}")
+                    physics_lines.append("-" * 118)
+                    for s in visible_sats_display:
+                        name_str = s['name'][:14]
+                        if s['flare_status'] > 0:
+                            name_str += " F"
+                        vis_str = "VIS" if s['vis'] == "YES" else ("DAY" if s['vis'] == "DAY" else "ECL")
+                        if s['el'] < 0:
+                            vis_str = "HOR"
+                        physics_lines.append(f"{name_str:<15} {s['az']:8.1f} {s['el']:8.1f} {s['range']:10.1f} {s['range_rate']:8.3f} {vis_str:<5} {s['next']:<12} {s['norad_id']:8d} {s['lat']:10.4f} {s['lon']:10.4f} {s['apogee']:10.1f} {s['flare_status']:6d}")
+                    phys_server.update_data("\n".join(physics_lines))
+
+                time.sleep(args.delta_t)
 
         # --- Shutdown / Save Prompt ---
         print("\nStopping tracker...")
@@ -312,16 +357,19 @@ Configuration is loaded from config.yaml by default.""",
                 break
 
         if txt_server: txt_server.stop()
+        if phys_server: phys_server.stop()
         executor.shutdown(wait=True)
 
     except KeyboardInterrupt:
         print("\nTracker stopped by user.")
         if txt_server: txt_server.stop()
+        if 'phys_server' in locals() and phys_server: phys_server.stop()
         if 'executor' in locals(): executor.shutdown(wait=True)
         sys.exit(0)
     except Exception as e:
         print(f"\nAn unexpected error occurred: {e}", file=sys.stderr)
         if 'txt_server' in locals() and txt_server: txt_server.stop()
+        if 'phys_server' in locals() and phys_server: phys_server.stop()
         if 'executor' in locals(): executor.shutdown(wait=True)
         raise
 

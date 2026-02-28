@@ -35,7 +35,11 @@ class SatelliteData:
     range_rate: float
     visibility: str
     next_event: str
-    has_flare: bool = False
+    norad_id: int = 0
+    latitude: float = 0.0
+    longitude: float = 0.0
+    apogee: float = 0.0
+    flare_status: int = 0
 
 
 @dataclass
@@ -60,7 +64,7 @@ def parse_frame(raw_data: str) -> Optional[TrackingFrame]:
     # Line 1: "2026-02-25 03:23:12.7 LOC"
     # Line 2: "OBS: 39.5478, -76.0916 | SHOWN: 5"
     # Line 3: empty or header
-    # Line 4: "NAME            AZ       EL      RANGE   RR(km/s) VIS   NEXT EVENT"
+    # Line 4: "NAME            AZ       EL      RANGE   RR(km/s) VIS   NEXT EVENT     NORAD        LAT        LON     APOGEE  FLARE"
     # Line 5: "----..."
     # Line 6+: data rows
 
@@ -106,8 +110,8 @@ def parse_frame(raw_data: str) -> Optional[TrackingFrame]:
 
 def parse_satellite_line(line: str) -> Optional[SatelliteData]:
     """Parse a single satellite data line."""
-    # Format: "%-15s %8.1f %8.1f %10.1f %8.3f %-5s %-12s"
-    # Example: "ISS (ZARYA)       123.4     45.6     1234.5    1.234 VIS   AOS 5m 30s"
+    # Format: "%-15s %8.1f %8.1f %10.1f %8.3f %-5s %-12s %8d %10.4f %10.4f %10.1f %6d"
+    # Example: "ISS (ZARYA)       123.4     45.6     1234.5    1.234 VIS   AOS 5m 30s    25544   45.1234  -76.5678     1234.5      0"
 
     line = line.strip()
     if not line or line.startswith('---') or line.startswith('NAME'):
@@ -135,8 +139,44 @@ def parse_satellite_line(line: str) -> Optional[SatelliteData]:
         if vis_idx < 0:
             return None
 
-        # Next event is everything after visibility
-        next_event = ' '.join(parts[vis_idx + 1:])
+        # Check if we have extended format (with NORAD, LAT, LON, APOGEE, FLARE after NEXT EVENT)
+        # Extended format has at least 4 more numeric fields after the next_event
+        norad_id = 0
+        latitude = 0.0
+        longitude = 0.0
+        apogee = 0.0
+        flare_status = 0
+
+        # Find where extended data starts - it's the numeric fields at the end
+        # Count backwards from end to find the extended fields
+        extended_fields = []
+        idx = len(parts) - 1
+        while idx > vis_idx:
+            try:
+                float(parts[idx])
+                extended_fields.insert(0, parts[idx])
+                idx -= 1
+            except ValueError:
+                break
+
+        # If we have at least 4 extended fields, parse them
+        if len(extended_fields) >= 4:
+            try:
+                flare_status = int(extended_fields[-1])
+                apogee = float(extended_fields[-2])
+                longitude = float(extended_fields[-3])
+                latitude = float(extended_fields[-4])
+                if len(extended_fields) >= 5:
+                    norad_id = int(extended_fields[-5])
+                # Next event is between visibility and extended fields
+                next_event_parts = parts[vis_idx + 1:idx + 1]
+                next_event = ' '.join(next_event_parts)
+            except (ValueError, IndexError):
+                # Fall back to old parsing
+                next_event = ' '.join(parts[vis_idx + 1:])
+        else:
+            # Old format - next event is everything after visibility
+            next_event = ' '.join(parts[vis_idx + 1:])
 
         # Numeric values are before visibility
         try:
@@ -151,9 +191,9 @@ def parse_satellite_line(line: str) -> Optional[SatelliteData]:
         name_parts = parts[:vis_idx - 4]
         name = ' '.join(name_parts)
 
-        # Check for flare indicator
-        has_flare = name.endswith(' F')
-        if has_flare:
+        # Check for flare indicator in name
+        has_flare = name.endswith(' F') or flare_status > 0
+        if name.endswith(' F'):
             name = name[:-2].strip()
 
         return SatelliteData(
@@ -164,7 +204,11 @@ def parse_satellite_line(line: str) -> Optional[SatelliteData]:
             range_rate=range_rate,
             visibility=visibility,
             next_event=next_event,
-            has_flare=has_flare
+            norad_id=norad_id,
+            latitude=latitude,
+            longitude=longitude,
+            apogee=apogee,
+            flare_status=flare_status
         )
     except Exception:
         return None
@@ -195,7 +239,7 @@ def display_frame(frame: TrackingFrame, use_color: bool = True):
     print()
 
     # Header
-    header = f"{'NAME':<20} {'AZ':>8} {'EL':>8} {'RANGE':>10} {'RR':>8} {'VIS':>5} {'NEXT EVENT':<15}"
+    header = f"{'NAME':<20} {'AZ':>8} {'EL':>8} {'RANGE':>10} {'RR':>8} {'VIS':>5} {'NEXT EVENT':<12} {'NORAD':>8} {'LAT':>10} {'LON':>10} {'APOGEE':>10} {'FLR':>4}"
     print(f"{BOLD}{header}{RESET}")
     print("-" * len(header))
 
@@ -216,13 +260,14 @@ def display_frame(frame: TrackingFrame, use_color: bool = True):
             color = RESET
 
         # Flare indicator
-        flare = ' *' if sat.has_flare else ''
+        flare_mark = '*' if sat.flare_status > 0 else ''
 
         name_display = (sat.name[:18] + '..') if len(sat.name) > 18 else sat.name
 
         print(f"{color}{name_display:<20} {sat.azimuth:8.1f} {sat.elevation:8.1f} "
               f"{sat.range_km:10.1f} {sat.range_rate:8.3f} {sat.visibility:>5} "
-              f"{sat.next_event:<15}{flare}{RESET}")
+              f"{sat.next_event:<12} {sat.norad_id:8d} {sat.latitude:10.4f} {sat.longitude:10.4f} "
+              f"{sat.apogee:10.1f} {sat.flare_status:3d}{flare_mark}{RESET}")
 
     print()
     print(f"{DIM}Press Ctrl+C to exit{RESET}")
@@ -236,7 +281,23 @@ def output_json(frame: TrackingFrame):
             'latitude': frame.observer_lat,
             'longitude': frame.observer_lon
         },
-        'satellites': [asdict(sat) for sat in frame.satellites]
+        'satellites': [
+            {
+                'name': sat.name,
+                'azimuth': sat.azimuth,
+                'elevation': sat.elevation,
+                'range_km': sat.range_km,
+                'range_rate': sat.range_rate,
+                'visibility': sat.visibility,
+                'next_event': sat.next_event,
+                'norad_id': sat.norad_id,
+                'latitude': sat.latitude,
+                'longitude': sat.longitude,
+                'apogee': sat.apogee,
+                'flare_status': sat.flare_status
+            }
+            for sat in frame.satellites
+        ]
     }
     print(json.dumps(data, indent=2))
 

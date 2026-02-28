@@ -79,16 +79,17 @@ namespace ve {
         if (scroll_offset_ > max_offset) scroll_offset_ = max_offset;
 
         const char* hdr_fmt = "%-15s %8s %8s %10s %8s %-5s %-12s";
+        const char* text_hdr_fmt = "%-15s %8s %8s %10s %8s %-5s %-12s %8s %10s %10s %10s %6s";
         if(input_mode_ != InputMode::CONFIRM_QUIT) {
             mvprintw(3, 0, hdr_fmt, "NAME", "AZ", "EL", "RANGE", "RR(km/s)", "VIS", "NEXT EVENT");
-            clrtoeol(); 
+            clrtoeol();
             mvprintw(4, 0, "-------------------------------------------------------------------------");
-            clrtoeol(); 
+            clrtoeol();
         }
-        
-        char buf[256];
-        snprintf(buf, sizeof(buf), hdr_fmt, "NAME", "AZ", "EL", "RANGE", "RR(km/s)", "VIS", "NEXT EVENT");
-        ss << buf << "\n-------------------------------------------------------------------------\n";
+
+        char buf[512];
+        snprintf(buf, sizeof(buf), text_hdr_fmt, "NAME", "AZ", "EL", "RANGE", "RR(km/s)", "VIS", "NEXT EVENT", "NORAD", "LAT", "LON", "APOGEE", "FLARE");
+        ss << buf << "\n----------------------------------------------------------------------------------------------------------------------\n";
 
         // --- TEXT BUFFER GENERATION (SORTED BY EL DESCENDING) ---
         std::vector<DisplayRow> text_rows = rows;
@@ -106,10 +107,11 @@ namespace ve {
             std::string d_name = r.name.substr(0,14);
             if (r.flare_status > 0) d_name += " F";
 
-            const char* row_fmt = "%-15s %8.1f %8.1f %10.1f %8.3f %-5s %-12s";
-            snprintf(buf, sizeof(buf), row_fmt, 
+            const char* text_row_fmt = "%-15s %8.1f %8.1f %10.1f %8.3f %-5s %-12s %8d %10.4f %10.4f %10.1f %6d";
+            snprintf(buf, sizeof(buf), text_row_fmt,
                      d_name.c_str(), r.az, r.el, r.range, r.range_rate,
-                     state_str.c_str(), r.next_event.c_str());
+                     state_str.c_str(), r.next_event.c_str(),
+                     r.norad_id, r.lat, r.lon, r.apogee, r.flare_status);
             ss << buf << "\n";
         }
 

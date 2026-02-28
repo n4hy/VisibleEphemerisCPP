@@ -55,6 +55,15 @@ class Observer:
         sun = self.eph['sun']
         return self.location.at(t).is_sunlit(self.eph)
 
+    def get_sun_position_eci(self, dt=None):
+        """Get sun position in GCRS/ECI coordinates (km)."""
+        t = self._ensure_time(dt)
+        sun = self.eph['sun']
+        earth = self.eph['earth']
+        # Get geocentric position of sun
+        sun_pos = earth.at(t).observe(sun).position.km
+        return sun_pos
+
 if __name__ == '__main__':
     observer = Observer(lat_deg=39.0, lon_deg=-76.8, alt_km=0.045)
     print(f"Sun Position: {observer.get_sun_position()}")
