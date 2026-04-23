@@ -1,4 +1,5 @@
 #include "tle_manager.hpp"
+#include "spacetrack_client.hpp"
 #include "logger.hpp"
 #include <iostream>
 #include <fstream>
@@ -248,4 +249,214 @@ namespace ve {
     std::string TLEManager::getFullCatalogJson() { return "[]"; } // Stub as builder removed
     void TLEManager::saveCustomGroup(const std::string& group_name, const std::vector<int>& norad_ids) {}
     std::string TLEManager::searchMasterCatalog(const std::string& query) { return "[]"; }
+
+    // ===== Historical TLE support (Space-Track gp_history) =====
+
+    std::string TLEManager::formatDate(std::time_t date) {
+        std::tm tm_utc;
+        gmtime_r(&date, &tm_utc);
+        char buf[16];
+        std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tm_utc);
+        return std::string(buf);
+    }
+
+    std::string TLEManager::historicalCachePath(const std::string& group_or_key, std::time_t date) {
+        std::string dir = cache_dir_ + "/historical/" + formatDate(date);
+        std::filesystem::create_directories(dir);
+        return dir + "/" + group_or_key + ".txt";
+    }
+
+    // Extract NORAD IDs from TLE line-1 (columns 3..7).
+    static std::vector<int> extractNoradIdsFromFile(const std::string& filepath) {
+        std::vector<int> ids;
+        std::ifstream f(filepath);
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.size() >= 7 && line.substr(0, 2) == "1 ") {
+                try { ids.push_back(std::stoi(line.substr(2, 5))); } catch (...) {}
+            }
+        }
+        return ids;
+    }
+
+    std::vector<int> TLEManager::resolveGroupToNoradIds(const std::string& group) {
+        std::string g = trim(group);
+
+        // Try to derive the current group membership from today's Celestrak listing.
+        std::vector<int> ids;
+        std::string url = getUrlForGroup(g);
+        if (!url.empty()) {
+            std::string current = cache_dir_ + "/" + g + ".txt";
+            if (!std::filesystem::exists(current) || !isCacheFresh(current)) {
+                downloadFile(url, current);
+            }
+            ids = extractNoradIdsFromFile(current);
+        }
+
+        // For iridium-NEXT, union with the hardcoded NORAD range (41917-43478) so that
+        // historical queries still work even if the current Celestrak listing no longer
+        // contains some decommissioned satellites.
+        if (g == "iridium-NEXT") {
+            std::set<int> merged(ids.begin(), ids.end());
+            for (int id = 41917; id <= 43478; ++id) merged.insert(id);
+            return std::vector<int>(merged.begin(), merged.end());
+        }
+        return ids;
+    }
+
+    std::vector<int> TLEManager::resolveSatNamesToNoradIds(const std::vector<std::string>& upper_names) {
+        std::vector<int> ids;
+        std::string active_file = cache_dir_ + "/active.txt";
+        if (!isCacheFresh(active_file)) {
+            downloadFile("https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle",
+                         active_file);
+        }
+        std::ifstream file(active_file);
+        std::string line, name, l1, l2;
+        while (std::getline(file, line)) {
+            line = trim(line); if (line.length() < 2) continue;
+            if (line.substr(0, 2) == "1 " && !name.empty()) {
+                l1 = line;
+                if (!std::getline(file, l2)) break;
+                l2 = trim(l2);
+                std::string upper_name = name;
+                std::transform(upper_name.begin(), upper_name.end(), upper_name.begin(), ::toupper);
+                bool match = false;
+                for (const auto& t : upper_names) {
+                    if (upper_name.find(t) != std::string::npos) { match = true; break; }
+                }
+                if (match) {
+                    try { ids.push_back(std::stoi(l1.substr(2, 5))); } catch (...) {}
+                }
+                name = "";
+            } else {
+                name = line;
+            }
+        }
+        return ids;
+    }
+
+    std::vector<Satellite> TLEManager::loadGroupsForDate(const std::string& groups_list_str,
+                                                         std::time_t target_date,
+                                                         int window_days) {
+        std::vector<Satellite> all_sats;
+        std::set<int> loaded_ids;
+        SpaceTrackClient st;
+
+        std::stringstream ss(groups_list_str);
+        std::string segment;
+        std::cout << "[TLE-HIST] Processing historical group list: " << groups_list_str
+                  << " @ " << formatDate(target_date) << std::endl;
+
+        while (std::getline(ss, segment, ',')) {
+            segment = trim(segment);
+            if (segment.empty()) continue;
+
+            std::string cache_path = historicalCachePath(segment, target_date);
+            bool cache_hit = std::filesystem::exists(cache_path) &&
+                             std::filesystem::file_size(cache_path) > 0;
+
+            if (cache_hit) {
+                std::cout << "[CACHE] Historical " << segment << " @ "
+                          << formatDate(target_date) << std::endl;
+            } else {
+                if (!st.hasCredentials()) {
+                    std::cerr << "[TLE-HIST] " << SpaceTrackClient::credentialsHelpText() << std::endl;
+                    return {};
+                }
+                auto ids = resolveGroupToNoradIds(segment);
+                if (ids.empty()) {
+                    std::cerr << "[TLE-HIST] No NORAD IDs resolved for group [" << segment << "]\n";
+                    continue;
+                }
+                if (!st.fetchHistoricalTLEs(ids, target_date, window_days, cache_path)) {
+                    std::cerr << "[TLE-HIST] Fetch failed for group [" << segment << "]\n";
+                    continue;
+                }
+            }
+
+            auto sats = parseFile(cache_path);
+            for (auto& sat : sats) {
+                int id = sat.getNoradId();
+                if (loaded_ids.insert(id).second) {
+                    all_sats.push_back(std::move(sat));
+                }
+            }
+        }
+
+        return all_sats;
+    }
+
+    std::vector<Satellite> TLEManager::loadSpecificSatsForDate(const std::string& sat_names_csv,
+                                                                std::time_t target_date,
+                                                                int window_days) {
+        std::vector<Satellite> results;
+        std::vector<std::string> targets;
+        std::stringstream ss(sat_names_csv);
+        std::string seg;
+        while (std::getline(ss, seg, ',')) {
+            std::string c = trim(seg);
+            if (c.empty()) continue;
+            std::transform(c.begin(), c.end(), c.begin(), ::toupper);
+            targets.push_back(c);
+        }
+
+        // SUN and MOON remain synthetic with a dummy TLE (main loop handles IDs -1/-2).
+        std::vector<std::string> real_targets;
+        for (const auto& t : targets) {
+            if (t == "SUN") {
+                results.emplace_back("SUN",
+                    "1 00001U 00001A   00001.00000000  .00000000  00000-0  00000-0 0    12",
+                    "2 00001   0.0000   0.0000 0000000   0.0000   0.0000  0.00000000    15");
+            } else if (t == "MOON") {
+                results.emplace_back("MOON",
+                    "1 00002U 00002A   00001.00000000  .00000000  00000-0  00000-0 0    13",
+                    "2 00002   0.0000   0.0000 0000000   0.0000   0.0000  0.00000000    16");
+            } else {
+                real_targets.push_back(t);
+            }
+        }
+
+        if (real_targets.empty()) return results;
+
+        std::string cache_key = "satsel";
+        std::string cache_path = historicalCachePath(cache_key, target_date);
+        // Include hash of target set in the filename so two different --satsel lists
+        // on the same date don't collide.
+        {
+            std::string joined;
+            for (auto& t : real_targets) { joined += t; joined += "|"; }
+            std::hash<std::string> h;
+            size_t hv = h(joined);
+            std::ostringstream os;
+            os << cache_key << "_" << std::hex << hv;
+            cache_path = historicalCachePath(os.str(), target_date);
+        }
+
+        bool cache_hit = std::filesystem::exists(cache_path) &&
+                         std::filesystem::file_size(cache_path) > 0;
+
+        if (!cache_hit) {
+            SpaceTrackClient st;
+            if (!st.hasCredentials()) {
+                std::cerr << "[TLE-HIST] " << SpaceTrackClient::credentialsHelpText() << std::endl;
+                return results; // may still contain SUN/MOON
+            }
+            auto ids = resolveSatNamesToNoradIds(real_targets);
+            if (ids.empty()) {
+                std::cerr << "[TLE-HIST] No NORAD IDs matched --satsel names.\n";
+                return results;
+            }
+            if (!st.fetchHistoricalTLEs(ids, target_date, window_days, cache_path)) {
+                std::cerr << "[TLE-HIST] Historical fetch failed for --satsel.\n";
+                return results;
+            }
+        } else {
+            std::cout << "[CACHE] Historical satsel @ " << formatDate(target_date) << std::endl;
+        }
+
+        auto sats = parseFile(cache_path);
+        for (auto& s : sats) results.push_back(std::move(s));
+        return results;
+    }
 }

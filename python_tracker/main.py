@@ -82,8 +82,21 @@ Configuration is loaded from config.yaml by default.""",
     parser.add_argument("--trail_mins", type=int, default=cm.get('trail_length_mins', 5), help="Trail length in minutes")
     parser.add_argument("--maxapo", "--map_apo", type=float, default=cm.get('max_apo', -1), dest='maxapo', help="Maximum apogee filter (km). Satellites above this are excluded. -1 disables.")
     parser.add_argument("--deltaT", type=float, default=cm.get('delta_t', 1.0), dest='delta_t', help="Time increment between calculations (0.001-60 seconds, default 1)")
+    parser.add_argument("--satsel", type=str, default=cm.get('sat_selection', ""), help="Comma-separated satellite names (overrides --groupsel)")
+    parser.add_argument("--time", type=str, default=None, help='Simulate time: "YYYY-MM-DD HH:MM:SS" (UTC). Past dates >24h ago fetch historical TLEs from Space-Track.')
 
     args = parser.parse_args()
+
+    # Parse --time into an aware UTC datetime (or None for real-time).
+    sim_time_utc = None
+    if args.time:
+        try:
+            sim_time_utc = datetime.datetime.strptime(args.time, "%Y-%m-%d %H:%M:%S") \
+                .replace(tzinfo=datetime.timezone.utc)
+            print(f"[TIME] Simulating UTC time: {sim_time_utc.isoformat()}")
+        except ValueError:
+            print(f'[ERROR] --time must be "YYYY-MM-DD HH:MM:SS" (got {args.time!r})', file=sys.stderr)
+            sys.exit(2)
 
     # Validate delta_t range
     if args.delta_t < 0.001 or args.delta_t > 60.0:
@@ -100,11 +113,32 @@ Configuration is loaded from config.yaml by default.""",
     observer = Observer(args.lat, args.lon, args.alt)
     tle_manager = TLEManager()
 
-    print(f"Loading TLEs for group(s): {args.groupsel}...")
-    tles = tle_manager.load_groups(args.groupsel)
+    # Decide between live Celestrak and historical Space-Track gp_history based on
+    # how far the simulated time is from real-now. Matches the C++ gate of +/- 24 h.
+    use_historical = False
+    if sim_time_utc is not None:
+        gap = abs((datetime.datetime.now(datetime.timezone.utc) - sim_time_utc).total_seconds())
+        use_historical = gap > 86400.0
+
+    hist_window_days = 10
+
+    if args.satsel:
+        print(f"Loading specific satellites: {args.satsel}"
+              + (" [HISTORICAL]" if use_historical else "") + "...")
+        if use_historical:
+            tles = tle_manager.load_specific_sats_for_date(args.satsel, sim_time_utc, hist_window_days)
+        else:
+            tles = tle_manager.load_specific_sats(args.satsel)
+    else:
+        print(f"Loading TLEs for group(s): {args.groupsel}"
+              + (" [HISTORICAL]" if use_historical else "") + "...")
+        if use_historical:
+            tles = tle_manager.load_groups_for_date(args.groupsel, sim_time_utc, hist_window_days)
+        else:
+            tles = tle_manager.load_groups(args.groupsel)
 
     if not tles:
-        print("Error: Could not load any TLE data. Check your network connection or group names.", file=sys.stderr)
+        print("Error: Could not load any TLE data. Check your network connection, group names, or Space-Track credentials.", file=sys.stderr)
         sys.exit(1)
 
     satellites = [Satellite(tle) for tle in tles]
@@ -138,6 +172,10 @@ Configuration is loaded from config.yaml by default.""",
     print("Starting tracker... Press 'q' to quit.")
     time.sleep(2)
 
+    # Decoupled clock: when simulating, physics time = sim_time_utc + elapsed wall-clock
+    # since program start. This mirrors the C++ physics_epoch + (Clock::now() - start) logic.
+    wall_start = datetime.datetime.now(datetime.timezone.utc)
+
     # --- Main Loop ---
     try:
         with KeyPoller() as key_poller:
@@ -148,7 +186,11 @@ Configuration is loaded from config.yaml by default.""",
                     if char.lower() == 'q':
                         break # Exit loop to handle save prompt
 
-                t_now = datetime.datetime.now(datetime.timezone.utc)
+                if sim_time_utc is not None:
+                    elapsed = datetime.datetime.now(datetime.timezone.utc) - wall_start
+                    t_now = sim_time_utc + elapsed
+                else:
+                    t_now = datetime.datetime.now(datetime.timezone.utc)
                 # Convert to Skyfield Time once for efficiency
                 t_now_ts = observer.ts.from_datetime(t_now)
 

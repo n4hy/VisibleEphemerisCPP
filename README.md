@@ -14,10 +14,11 @@ Both **C++** and **Python** implementations are provided with identical function
 ### Tracking Engine
 * **SGP4/SDP4 Propagation**: Uses `libsgp4` (C++) or `Skyfield` (Python) for high-precision orbital math.
 * **Massive Scale**: Tracks the entire NORAD Active Catalog (13,000+ objects) simultaneously.
-* **Smart Caching**: Automatic TLE downloading and caching from Celestrak with 24-hour auto-refresh cycle.
+* **Smart Caching**: Automatic TLE downloading and caching from Celestrak with 24-hour auto-refresh cycle. Historical TLEs (`tle_cache/historical/YYYY-MM-DD/`) are cached permanently since archived elements never change.
 * **Multi-Group Selection**: Track specific combinations (e.g., `amateur,weather,stations`) using the `group_selection` config or `--groupsel` argument.
 * **Stability**: Implements "Pre-calculate All" logic at startup to ensure 24-hour pass predictions are instantly available, eliminating "Calculating..." flicker and UI jitter.
 * **Decoupled Clock**: Simulation time input is treated as "Face Value" (Local Wall-Clock Time) for display, while strictly adhering to UTC for orbital physics, eliminating timezone confusion.
+* **Historical Playback**: Run the tracker at any past UTC date. For dates >24 h in the past, TLEs valid on that date are pulled from Space-Track.org's `gp_history` archive, cached permanently, and propagated exactly as the live tracker does. Full Iridium-NEXT constellation coverage from its 2017–2019 launches. See [Historical Tracking](#historical-tracking-past-dates).
 
 ### Display Systems
 * **NCurses Terminal Dashboard** (C++):
@@ -126,14 +127,23 @@ min_el: 0                 # Minimum elevation filter (degrees)
 max_apo: -1               # Maximum apogee filter, -1 = disabled
 trail_length_mins: 5      # Ground track trail length (+/- minutes)
 group_selection: iridium-NEXT   # Celestrak group(s), comma-separated
+sat_selection: ""         # Specific satellite names (overrides group_selection). e.g. "ISS,NOAA 19"
 visible_only: false       # false = Radio Mode (all sats), true = Optical Mode
+delta_t: 1.0              # Update interval in seconds (0.001-60)
+radio_control: false      # Enable Hamlib radio control (Doppler)
 rotator_control: false    # Enable Hamlib rotator control
 rotator_host: localhost   # Rotator daemon host
 rotator_port: 4533        # Rotator daemon port
 rotator_min_el: 0         # Minimum elevation for rotator tracking
 ```
 
+> **Note:** Space-Track credentials are **not** stored in `config.yaml`. They live outside the repo in environment variables or `~/.config/visible-ephemeris/spacetrack.ini` — see [Space-Track credentials](#space-track-credentials).
+
 ### Command Line Arguments
+
+| Argument | Description | Default |
+|:---------|:------------|:--------|
+Both C++ and Python accept the same flag names unless noted.
 
 | Argument | Description | Default |
 |:---------|:------------|:--------|
@@ -141,18 +151,113 @@ rotator_min_el: 0         # Minimum elevation for rotator tracking
 | `--lon <deg>` | Observer Longitude (Decimal Degrees) | from config |
 | `--alt <km>` | Observer Altitude (km) | from config |
 | `--groupsel <list>` | Comma-separated Celestrak groups (e.g., `amateur,weather`) | `active` |
-| `--satsel <list>` | Comma-separated Satellite Names (overrides groupsel) | None |
+| `--satsel <list>` | Comma-separated satellite names (substring match); overrides `--groupsel` | from config |
 | `--visible` | Optical Mode: show only sunlit satellites | from config |
 | `--no-visible` | Radio Mode: show ALL satellites (Python only) | - |
 | `--minel <deg>` | Minimum elevation filter | 0.0 |
 | `--maxsats <N>` | Maximum satellites to display | 100 |
 | `--maxapo <km>` | Filter satellites with apogee > N km | -1 (disabled) |
 | `--trail_mins <N>` | Ground track trail length (+/- minutes) | 5 |
-| `--rotator` | Enable Hamlib Rotator Control | false |
-| `--refresh` | Force fresh download of TLE data | false |
-| `--time <str>` | Simulate time (Format: "YYYY-MM-DD HH:MM:SS") | Real-time |
+| `--radio <bool>` | Enable Hamlib radio control (C++ only, requires single `--satsel`) | false |
+| `--rotator <bool>` | Enable Hamlib rotator control (C++ only, requires single `--satsel`) | false |
+| `--refresh` | Force fresh download of TLE data (C++ only) | false |
+| `--time <str>` | Simulate time in UTC (`"YYYY-MM-DD HH:MM:SS"`). Past dates >24 h ago trigger historical TLE retrieval from Space-Track — see [Historical Tracking](#historical-tracking-past-dates) | Real-time |
 | `--deltaT <sec>` | Update interval in seconds (0.001-60) | 1.0 |
-| `--port <A,B,C>` | Override network ports (web,text,physics) | 8080,12345,12346 |
+| `--port <A,B,C>` | Override network ports (web,text,physics) — C++ only | 8080,12345,12346 |
+| `--groupbuild` | Enter Mission Planner builder mode (C++ only) | - |
+
+---
+
+## Historical Tracking (Past Dates)
+
+When `--time` specifies a UTC date more than 24 hours in the past, the tracker fetches the TLEs that were current on that date from **Space-Track.org** (endpoint `gp_history`), caches them under `tle_cache/historical/<YYYY-MM-DD>/`, and propagates from there. This avoids the multi-kilometer SGP4 error that would result from propagating today's elements backward years.
+
+Coverage is authoritative for the full USSPACECOM catalog back to 1957, including the entire Iridium-NEXT constellation (NORAD 41917–43478) from its 2017–2019 launches.
+
+### Space-Track credentials
+
+Historical TLE retrieval uses **Space-Track.org**, the authoritative public archive operated by the U.S. 18th Space Defense Squadron. An account is free but required; it is only needed when `--time` selects a date more than 24 hours from wall-clock now. Real-time and near-real-time operation continue to use Celestrak and require no account.
+
+#### Step 1 — Register for a Space-Track account
+
+Open **https://www.space-track.org/auth/createAccount** in your browser and fill out the registration form. The following fields are required:
+
+| Field | Notes |
+|:------|:------|
+| Email address | Must be valid and active — a verification email is sent here, and it doubles as your login username. |
+| Organization and interests | Describe who you are and why you want the data (e.g., "Amateur radio operator; historical satellite visibility analysis with open-source Visible Ephemeris tracker"). A brief, honest description is enough. |
+| Name (first / middle / last, optional prefix/suffix) | *"Special characters and numerals are not allowed in names (Dashes, periods, spaces and apostrophes are allowed)."* |
+| Phone number | Used only for account-related contact. |
+| Mailing address | Street, city, state/region, postal code, country. |
+
+You will be asked to agree to the **User Agreement**. The key obligations are worth reading in full, but in summary:
+
+- You will **not transfer data or technical information received from the site to any other entity without prior express approval**. In practice, TLEs (which fall under "basic SSA data") are allowed to be used in your own tools and redistributed with citation; anything beyond basic data requires explicit authorization.
+- You will **not share or transfer your username/password**. Each individual using the data needs their own account.
+- Access is **currently free** ("*The present U.S. Government policy is not to charge for website access*") but must be **renewed periodically**.
+
+For Visible Ephemeris, your use — pulling historical TLEs to your own cache for personal propagation — is within the scope of basic SSA data use. Do not check cached TLEs into a public repository or redistribute them in bulk.
+
+#### Step 2 — Confirm your email
+
+After submitting the form, Space-Track sends a confirmation email. Click the link to activate the account. If you don't receive it within a reasonable time or the form rejects your submission, contact **admin@space-track.org**.
+
+#### Step 3 — Verify login on the website
+
+Log in once at https://www.space-track.org/ with your email and chosen password before using the credentials here. This confirms the account is active and lets you read the current API documentation at https://www.space-track.org/documentation.
+
+#### Step 4 — Provide credentials to Visible Ephemeris
+
+Credentials are read at program start, in this order:
+
+1. **Environment variables** (recommended for shell-scripted use):
+   ```bash
+   export SPACETRACK_USER='your_email@example.com'
+   export SPACETRACK_PASS='your_password'
+   ```
+
+2. **Config file** `~/.config/visible-ephemeris/spacetrack.ini`:
+   ```ini
+   [spacetrack]
+   username = your_email@example.com
+   password = your_password
+   ```
+   Create the directory and restrict permissions so only your account can read it:
+   ```bash
+   mkdir -p ~/.config/visible-ephemeris
+   chmod 700 ~/.config/visible-ephemeris
+   # ... create the file ...
+   chmod 600 ~/.config/visible-ephemeris/spacetrack.ini
+   ```
+
+Both the C++ and Python implementations check these locations; whichever is found first wins. If neither is set when a historical query is attempted, Visible Ephemeris prints a clear error with these same instructions and exits non-zero — it never silently falls back to current Celestrak TLEs.
+
+#### Step 5 — Mind the rate limits
+
+Space-Track enforces API throttling. The Visible Ephemeris historical loader is designed to consume a tiny fraction of the budget — one `gp_history` range query per (date, group) combination, cached permanently so the second run is offline — but if you script many different dates back-to-back you may hit the limits:
+
+- **General:** *"Limit API queries to less than 30 requests per 1 minute(s) and 300 requests per 1 hour(s)."*
+- **Violation:** *"Your space-track account may be suspended if you violate the usage policy."*
+
+One run of Visible Ephemeris over one date and one group = 2 requests (login + query). Each additional date or group name adds one more query.
+
+#### What gp_history gives you
+
+The `gp_history` class on the `basicspacedata` endpoint returns every General Perturbations (GP) element set — including classical TLEs — ever published by USSPACECOM for each object in the public catalog, keyed by EPOCH. This is the same data source CelesTrak and most other TLE services mirror from. Standard registered accounts have access to `gp_history` with no additional approval required.
+
+### Example: Iridium-NEXT on a past date
+
+```bash
+# C++
+./VisibleEphemeris --time "2019-06-15 12:00:00" --groupsel iridium-NEXT
+
+# Python
+python3 main.py --time "2019-06-15 12:00:00" --groupsel iridium-NEXT
+```
+
+Expected behavior: the program prints `[SPACETRACK] ...`, writes `tle_cache/historical/2019-06-15/iridium-NEXT.txt`, loads the satellites, and runs normally. Re-running the same command uses the cache with no network call.
+
+Historical TLE selection rule: for each NORAD ID, the tracker keeps the TLE with the latest EPOCH not exceeding the target date, within a ±10 day window. Satellites with no TLE in that window are skipped with a warning.
 
 ---
 
@@ -207,6 +312,27 @@ Run on alternative ports (useful for multiple instances or firewall restrictions
 
 # Change only the physics stream port (keep others at defaults)
 ./VisibleEphemeris --port ,,9346
+```
+
+### 7. Historical Playback (Past Date)
+Propagate positions as they would have been seen on an arbitrary UTC date. Requires a free Space-Track.org account for dates more than 24 hours in the past (see [Space-Track credentials](#space-track-credentials)):
+```bash
+# All Iridium-NEXT satellites over a summer day in 2019
+./VisibleEphemeris --time "2019-06-15 12:00:00" --groupsel iridium-NEXT
+
+# Track the ISS at a specific moment in 2018
+./VisibleEphemeris --time "2018-11-02 03:30:00" --satsel ISS
+
+# Python tracker uses the same flags
+python3 main.py --time "2019-06-15 12:00:00" --groupsel iridium-NEXT
+```
+TLEs are cached permanently under `tle_cache/historical/YYYY-MM-DD/`; re-running the same date is offline.
+
+### 8. Near-Now Simulation (No Credentials Needed)
+`--time` within 24 hours of wall-clock now stays on the live Celestrak path and does **not** require Space-Track credentials:
+```bash
+# 2 hours ago; uses today's cached Celestrak TLEs
+./VisibleEphemeris --time "$(date -u -d '2 hours ago' +'%Y-%m-%d %H:%M:%S')" --groupsel stations
 ```
 
 ---

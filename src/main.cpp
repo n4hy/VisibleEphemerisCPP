@@ -36,7 +36,8 @@ void print_help() {
               << "  --groupsel <list> Comma-separated groups (e.g. \"amateur,weather,stations\")\n"
               << "  --satsel <list>   Comma-separated Satellite Names (Overrules groupsel)\n"
               << "  --visible <bool>  Limit to Optically Visible only (true/false)\n"
-              << "  --time <str>      Simulate time (e.g. \"2025-01-01 12:00:00\")\n"
+              << "  --time <str>      Simulate UTC time (e.g. \"2019-06-15 12:00:00\"). Past\n"
+              << "                    dates >24h ago fetch historical TLEs from Space-Track.\n"
               << "  --deltaT <sec>    Time increment between calculations (0.001-60, default 1)\n"
               << "  --radio <bool>    Enable radio control (true/false, requires --satsel)\n"
               << "  --rotator <bool>  Enable rotator control (true/false, requires --satsel)\n"
@@ -341,14 +342,27 @@ int main(int argc, char* argv[]) {
         
         // --- PHASE 2: TRACKER MODE ---
         std::cout << "Loading TLEs..." << std::endl;
-        
+
+        // Decide between live (Celestrak, today's elements) and historical (Space-Track
+        // gp_history at physics_epoch) based on how far the simulated time sits from now.
+        std::time_t now_real = std::time(nullptr);
+        double gap_seconds = std::difftime(now_real, physics_epoch);
+        bool use_historical = sim_time && (gap_seconds > 86400.0 || gap_seconds < -86400.0);
+        const int hist_window_days = 10;
+
         std::vector<Satellite> sats;
         if (!config.sat_selection.empty()) {
-             std::cout << "Loading specific satellites: " << config.sat_selection << "..." << std::endl;
-             sats = tle_mgr.loadSpecificSats(config.sat_selection);
+             std::cout << "Loading specific satellites: " << config.sat_selection
+                       << (use_historical ? " [HISTORICAL]" : "") << "..." << std::endl;
+             sats = use_historical
+                 ? tle_mgr.loadSpecificSatsForDate(config.sat_selection, physics_epoch, hist_window_days)
+                 : tle_mgr.loadSpecificSats(config.sat_selection);
         } else {
-             std::cout << "Loading TLE groups: " << config.group_selection << "..." << std::endl;
-             sats = tle_mgr.loadGroups(config.group_selection);
+             std::cout << "Loading TLE groups: " << config.group_selection
+                       << (use_historical ? " [HISTORICAL]" : "") << "..." << std::endl;
+             sats = use_historical
+                 ? tle_mgr.loadGroupsForDate(config.group_selection, physics_epoch, hist_window_days)
+                 : tle_mgr.loadGroups(config.group_selection);
         }
         
         if (sats.empty()) { 
@@ -399,9 +413,9 @@ int main(int argc, char* argv[]) {
                 bool perform_reload = false;
                 bool force_refresh = false;
 
-                // 1. Check Schedule (Daily TLE Update)
+                // 1. Check Schedule (Daily TLE Update) - skipped in historical mode
                 auto now_steady = std::chrono::steady_clock::now();
-                if (now_steady - last_tle_refresh > std::chrono::hours(24)) {
+                if (!use_historical && now_steady - last_tle_refresh > std::chrono::hours(24)) {
                     Logger::log("Scheduled Daily TLE Refresh...");
                     perform_reload = true;
                     force_refresh = true;
@@ -434,11 +448,15 @@ int main(int argc, char* argv[]) {
                          state.updated = false;
                      }
 
-                     // Re-load
+                     // Re-load (preserve historical vs. live routing)
                      if (!config.sat_selection.empty()) {
-                          sats = tle_mgr.loadSpecificSats(config.sat_selection);
+                          sats = use_historical
+                              ? tle_mgr.loadSpecificSatsForDate(config.sat_selection, physics_epoch, hist_window_days)
+                              : tle_mgr.loadSpecificSats(config.sat_selection);
                      } else {
-                          sats = tle_mgr.loadGroups(config.group_selection);
+                          sats = use_historical
+                              ? tle_mgr.loadGroupsForDate(config.group_selection, physics_epoch, hist_window_days)
+                              : tle_mgr.loadGroups(config.group_selection);
                      }
 
                      // Re-Run Pre-calc

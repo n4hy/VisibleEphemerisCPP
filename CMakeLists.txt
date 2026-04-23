@@ -57,6 +57,7 @@ set(SOURCES
     src/visibility.cpp
     src/pass_predictor.cpp
     src/tle_manager.cpp
+    src/spacetrack_client.cpp
     src/display.cpp
     src/web_server.cpp
     src/text_server.cpp

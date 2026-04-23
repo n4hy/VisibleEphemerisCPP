@@ -1,0 +1,38 @@
+#pragma once
+#include <string>
+#include <vector>
+#include <ctime>
+
+namespace ve {
+
+    // Minimal Space-Track.org client for historical TLE retrieval (gp_history endpoint).
+    // Credentials are resolved from (in order):
+    //   1. environment variables SPACETRACK_USER and SPACETRACK_PASS
+    //   2. file ~/.config/visible-ephemeris/spacetrack.ini ([spacetrack] username=, password=)
+    class SpaceTrackClient {
+    public:
+        SpaceTrackClient();
+
+        // True if credentials were found. If false, any historical fetch will fail.
+        bool hasCredentials() const { return !username_.empty() && !password_.empty(); }
+
+        // Human-readable hint used for error messages when hasCredentials() is false.
+        static std::string credentialsHelpText();
+
+        // Fetch gp_history for the given NORAD IDs at (or just before) target_date.
+        // Writes 3LE (three-line element set) output to dest_path; one "latest TLE whose
+        // epoch <= target_date, within +/- window_days" per NORAD ID.
+        // Returns true on success.
+        bool fetchHistoricalTLEs(const std::vector<int>& norad_ids,
+                                 std::time_t target_date,
+                                 int window_days,
+                                 const std::string& dest_path);
+
+    private:
+        std::string username_;
+        std::string password_;
+
+        void loadCredentials();
+        static std::string urlEncode(const std::string& s);
+    };
+}
