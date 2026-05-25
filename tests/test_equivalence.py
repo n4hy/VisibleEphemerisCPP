@@ -22,6 +22,7 @@ import datetime
 import subprocess
 import json
 import tempfile
+import shutil
 
 # Add python_tracker to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'python_tracker'))
@@ -211,8 +212,10 @@ int main(int argc, char* argv[]) {
         os.path.join(src_dir, 'logger.cpp'),
     ]
 
+    # Pick a C++ compiler: $CXX, else clang++ (project reference), else g++.
+    cxx = os.environ.get('CXX') or shutil.which('clang++') or shutil.which('g++') or 'c++'
     cmd = [
-        'clang++', '-std=c++17', '-O2',
+        cxx, '-std=c++17', '-O2',
         '-I', include_dir,
         '-I', sgp4_inc,
     ] + src_files + [
@@ -222,7 +225,7 @@ int main(int argc, char* argv[]) {
         '-o', bin_path
     ]
 
-    print(f"Compiling C++ test tool...")
+    print(f"Compiling C++ test tool with {cxx}...")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"COMPILE ERROR:\n{result.stderr}")

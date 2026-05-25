@@ -45,18 +45,22 @@ Shows **ALL satellites** in the selected group(s), color-coded by elevation and 
 
 | Color | Condition | Description |
 |:------|:----------|:------------|
-| **Yellow** | Above min_el AND Visible | Satellite is sunlit, observer in darkness - optimal for visual observation |
-| **Green** | Above min_el AND NOT Visible | Satellite above minimum elevation but in daylight or eclipsed - good for radio |
+| **Yellow** | Above min_el AND Visible | Naked-eye visible: above the horizon, observer in astronomical twilight or darker (sun ≤ −12°), and satellite sunlit (not in Earth's shadow) |
+| **Green** | Above min_el AND NOT Visible | Above minimum elevation but not naked-eye visible (daylight/twilight, or satellite eclipsed) - good for radio |
 | **Grey** | Below min_el OR Below Horizon | Satellite is low or not yet risen - displayed for situational awareness |
 
 This mode displays every satellite in the group on the map and in tables, limited only by `max_sats`.
 
-### Optical Mode (`visible_only: true`)
-Shows only satellites that are:
-1. Above the minimum elevation (`min_el`)
-2. Optically visible (sunlit satellite with observer in darkness)
+### Naked-eye visibility definition
+A satellite is reported **Visible** (yellow) when **all** of the following hold:
+1. It is **above the observer's horizon** (elevation > 0°).
+2. The observer is in **astronomical twilight or darker** — the Sun is at or below **−12°** altitude.
+3. The satellite is **sunlit** — not inside Earth's shadow.
 
-This mode is optimized for visual observers who only want to see satellites they can actually spot.
+Otherwise a sunlit satellite is reported as daylight/not-visible, and a shadowed one as eclipsed. This definition is identical in the C++ and Python implementations.
+
+### Optical Mode (`visible_only: true`)
+Shows only satellites that meet the naked-eye visibility definition above (and are above `min_el`). This optional mode is for visual observers who only want satellites they can actually spot. With the default `visible_only: false`, every satellite above `min_el` is displayed and color coding alone distinguishes visibility.
 
 ### Hardware Control
 * **Radio Control**: Automated Hamlib control for Transceiver Frequency/Mode (Doppler correction). *Requires single satellite selection.*
@@ -79,10 +83,20 @@ chmod +x build.sh
 **Note:** The script utilizes `sudo` to install dependencies and the final binary.
 
 #### Manual Build
+
+Dependencies (Ubuntu/Debian): `cmake` (≥ 3.14), a C++17 compiler (`clang` or `g++`), `libncurses-dev`, `libcurl4-openssl-dev`, and `pkg-config`. The SGP4 propagation library `libsgp4` must also be present — `build.sh` builds it from [dnwrnr/sgp4](https://github.com/dnwrnr/sgp4). `libhamlib-dev` is optional and enables radio/rotator control.
+
 ```bash
+sudo apt install cmake clang libncurses-dev libcurl4-openssl-dev pkg-config libhamlib-dev
+
 mkdir build && cd build
-cmake ..
-make -j4
+cmake ..                 # auto-selects clang if present, else GCC; add -DENABLE_HAMLIB=OFF to skip Hamlib
+make -j$(nproc)
+```
+
+If `libsgp4` is installed to a non-standard prefix (e.g. `~/sgp4/build/install`, where `build.sh` puts it), put it on the library path at runtime:
+```bash
+LD_LIBRARY_PATH=~/sgp4/build/install/lib ./VisibleEphemeris
 ```
 
 ### Python Version
@@ -97,9 +111,9 @@ The Python tracker is located in `python_tracker/` and provides identical functi
 ```bash
 cd python_tracker
 
-# Create virtual environment with system packages
-python3 -m venv --system-site-packages venv
-source venv/bin/activate
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
@@ -107,7 +121,7 @@ pip install -r requirements.txt
 
 **Running:**
 ```bash
-source venv/bin/activate  # If not already activated
+source .venv/bin/activate  # If not already activated
 python3 main.py
 ```
 
@@ -141,8 +155,6 @@ rotator_min_el: 0         # Minimum elevation for rotator tracking
 
 ### Command Line Arguments
 
-| Argument | Description | Default |
-|:---------|:------------|:--------|
 Both C++ and Python accept the same flag names unless noted.
 
 | Argument | Description | Default |
@@ -153,7 +165,7 @@ Both C++ and Python accept the same flag names unless noted.
 | `--groupsel <list>` | Comma-separated Celestrak groups (e.g., `amateur,weather`) | `active` |
 | `--satsel <list>` | Comma-separated satellite names (substring match); overrides `--groupsel` | from config |
 | `--visible` | Optical Mode: show only sunlit satellites | from config |
-| `--no-visible` | Radio Mode: show ALL satellites (Python only) | - |
+| `--no-visible` | Radio Mode: show ALL satellites (color-coded by visibility) | - |
 | `--minel <deg>` | Minimum elevation filter | 0.0 |
 | `--maxsats <N>` | Maximum satellites to display | 100 |
 | `--maxapo <km>` | Filter satellites with apogee > N km | -1 (disabled) |
@@ -439,7 +451,7 @@ Multiple groups can be combined: `--groupsel amateur,weather,stations`
 
 ### Ubuntu Linux (PC/Laptop)
 * **Performance:** High. Capable of tracking 20,000+ objects without UI lag.
-* **Compiler:** Uses Clang by default on Ubuntu 24.04.
+* **Compiler:** Builds with Clang or GCC (C++17). CMake auto-selects Clang when it is installed and falls back to the system default (GCC) otherwise; override with `-DCMAKE_CXX_COMPILER=...`.
 * **Radio Control:** Typically uses USB interfaces. Ensure your user is in the `dialout` group: `sudo usermod -aG dialout $USER`
 
 ### Raspberry Pi 5
@@ -474,11 +486,20 @@ python_tracker/.venv/bin/python tests/test_equivalence.py
 
 **Test satellites:** ISS (LEO, ~420 km), NOAA 19 (polar, ~860 km), GPS BIIR-2 (MEO, ~20,200 km).
 
-**Known visibility discrepancy:** Python uses Skyfield's `is_sunlit()` with JPL DE421 ephemeris for observer darkness. C++ uses a Meeus analytical sun model with a hard -6 degree civil twilight cutoff. Near the terminator boundary, these models may disagree on whether the observer is "dark enough," causing Python to report `YES` (visible) while C++ reports `DAY` (daylight). The satellite illumination calculation itself agrees between both implementations.
+**Visibility model note:** Both implementations use the same naked-eye visibility definition (above the horizon + observer Sun ≤ −12° + satellite sunlit). They differ only in the Sun model used to compute the observer's solar altitude — Python uses the JPL DE421 ephemeris, C++ uses a Meeus analytical model. These agree to within a few thousandths of a degree, so the two can disagree only for a satellite whose observer-Sun altitude sits within ~0.005° of the −12° boundary. The satellite illumination (Earth-shadow) calculation agrees between both implementations.
 
-**Additional unit tests:**
+**Additional unit tests (Python, run by the equivalence test):**
 - Apogee computation from TLE orbital elements (Kepler's third law)
 - Decay detection (80 km apogee threshold)
+
+### C++ Flare-Detection Unit Test
+
+A standalone test of the specular-flare reflection geometry (`unittests/test_flare.cpp`):
+```bash
+# From project root
+clang++ -std=c++17 -Iinclude unittests/test_flare.cpp src/visibility.cpp -o /tmp/test_flare && /tmp/test_flare
+```
+It covers a direct nadir flare (hit), a near-miss, an off-axis miss, high-orbit rejection (non-LEO), and daylight rejection. Expected output ends with `ALL TESTS PASSED`.
 
 ---
 
@@ -487,5 +508,6 @@ python_tracker/.venv/bin/python tests/test_equivalence.py
 * **Author**: Dr. Robert W. McGwier, PhD (N4HY)
 * **AI Assistance**: Claude (Anthropic) for implementation
 * **Based on**: *Quiktrak* (1981 VBasic, 1983 Commodore C, IBM C 1986, 1990, 1999)
-* **License**: MIT
+* **License**: MIT — see [LICENSE](LICENSE)
+
 ENJOYMENT IS REQUIRED. REPORT BUGS!

@@ -157,7 +157,7 @@ namespace ve {
         }
 
         // 2. Build gp_history query
-        //    /class/gp_history/NORAD_CAT_ID/<ids>/EPOCH/<D-window>--<D+1day>/orderby/NORAD_CAT_ID,EPOCH desc/format/3le
+        //    /class/gp_history/NORAD_CAT_ID/<ids>/EPOCH/<D-window>--<D>/orderby/NORAD_CAT_ID,EPOCH desc/format/3le
         std::string id_list;
         for (size_t i = 0; i < norad_ids.size(); ++i) {
             if (i) id_list += ",";
@@ -165,7 +165,7 @@ namespace ve {
         }
 
         std::time_t start_t = target_date - (std::time_t)window_days * 86400;
-        std::time_t end_t   = target_date + 86400; // inclusive of target day
+        std::time_t end_t   = target_date; // do not include epochs after the target instant
         std::string start_iso = formatIso8601(start_t);
         std::string end_iso   = formatIso8601(end_t);
 

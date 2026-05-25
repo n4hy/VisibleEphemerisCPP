@@ -83,7 +83,7 @@ Configuration is loaded from config.yaml by default.""",
     parser.add_argument("--maxapo", "--map_apo", type=float, default=cm.get('max_apo', -1), dest='maxapo', help="Maximum apogee filter (km). Satellites above this are excluded. -1 disables.")
     parser.add_argument("--deltaT", type=float, default=cm.get('delta_t', 1.0), dest='delta_t', help="Time increment between calculations (0.001-60 seconds, default 1)")
     parser.add_argument("--satsel", type=str, default=cm.get('sat_selection', ""), help="Comma-separated satellite names (overrides --groupsel)")
-    parser.add_argument("--time", type=str, default=None, help='Simulate time: "YYYY-MM-DD HH:MM:SS" (UTC). Past dates >24h ago fetch historical TLEs from Space-Track.')
+    parser.add_argument("--time", type=str, default=None, help='Simulate time: "YYYY-MM-DD HH:MM:SS" (UTC). Times more than 24h from real-now fetch historical TLEs from Space-Track.')
 
     args = parser.parse_args()
 

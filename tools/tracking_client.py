@@ -2,7 +2,8 @@
 """
 TCP Client for VisibleEphemeris Physics Stream
 
-Connects to the C++ tracker's raw TCP output (port 12346) and parses
+Connects to the tracker's raw physics TCP stream (port 12346, served by either
+the C++ or Python tracker — both emit the identical frame format) and parses
 satellite tracking data for display or further processing.
 
 Usage:

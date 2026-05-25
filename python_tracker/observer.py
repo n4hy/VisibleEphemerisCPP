@@ -49,11 +49,16 @@ class Observer:
         subpoint = wgs84.subpoint(earth.at(t).observe(sun))
         return subpoint.latitude.degrees, subpoint.longitude.degrees
 
-    def is_sunlit(self, dt=None):
-        # Check if observer is in sunlight (for day/night visual filtering)
+    def sun_altitude_deg(self, dt=None):
+        # Apparent altitude of the Sun above the observer's horizon (degrees).
+        # Used for observer-darkness classification. NOTE: Skyfield's is_sunlit()
+        # is intended for satellites and is degenerate for points on the surface,
+        # so we compute the topocentric solar altitude directly instead.
         t = self._ensure_time(dt)
         sun = self.eph['sun']
-        return self.location.at(t).is_sunlit(self.eph)
+        earth = self.eph['earth']
+        alt, _az, _d = (earth + self.location).at(t).observe(sun).apparent().altaz()
+        return alt.degrees
 
     def get_sun_position_eci(self, dt=None):
         """Get sun position in GCRS/ECI coordinates (km)."""

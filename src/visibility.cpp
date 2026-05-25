@@ -35,8 +35,14 @@ namespace ve {
         double angle = std::acos(sat.normalize().dot(sun.normalize()));
         bool lit = (angle < (PI/2.0)) || ((PI - angle) >= umbra);
         if (!lit) return State::ECLIPSED;
+        // Naked-eye VISIBLE requires three things together:
+        //   1. the satellite is above the observer's horizon (el > 0),
+        //   2. the observer is in astronomical twilight or darker (sun <= -12 deg),
+        //   3. the satellite is sunlit (checked above via `lit`).
+        // A sunlit satellite that fails (1) or (2) is reported DAYLIGHT: it exists
+        // but is not visually observable.
         double sun_el = (PI/2.0) - std::acos(obs.normalize().dot(sun.normalize()));
-        if (sun_el < (-6.0 * DEG2RAD)) return State::VISIBLE;
+        if (el > 0.0 && sun_el <= (-12.0 * DEG2RAD)) return State::VISIBLE;
         return State::DAYLIGHT;
     }
 

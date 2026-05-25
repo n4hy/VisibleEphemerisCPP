@@ -48,7 +48,8 @@ def _fetch_historical_tles(norad_ids, target_date, window_days, dest_path):
     """Fetch historical TLEs from Space-Track gp_history for the given NORAD IDs.
 
     Writes a 3LE file at dest_path containing one TLE per satellite: the latest EPOCH
-    within [target_date - window_days, target_date + 1 day]. Returns number written.
+    within [target_date - window_days, target_date] (never after the target instant).
+    Returns number written.
     """
     user, pwd = _load_spacetrack_credentials()
     if not user or not pwd:
@@ -84,7 +85,8 @@ def _fetch_historical_tles(norad_ids, target_date, window_days, dest_path):
                                               tzinfo=datetime.timezone.utc)
 
     start_iso = (target_dt - datetime.timedelta(days=window_days)).strftime("%Y-%m-%dT%H:%M:%S")
-    end_iso = (target_dt + datetime.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    # End at the target instant — never select an element set published after the target.
+    end_iso = target_dt.strftime("%Y-%m-%dT%H:%M:%S")
     id_list = ",".join(str(i) for i in norad_ids)
 
     url = (f"{SPACETRACK_QUERY_BASE}/NORAD_CAT_ID/{id_list}"

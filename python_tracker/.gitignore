@@ -3,3 +3,4 @@ __pycache__/
 deltat.data
 deltat.preds
 Leap_Second.dat
+debug.log

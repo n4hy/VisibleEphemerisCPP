@@ -3,6 +3,11 @@
 namespace ve {
     class VisibilityCalculator {
     public:
+        // VISIBLE  = sunlit, above the horizon, observer in astronomical twilight or
+        //            darker (sun <= -12 deg) -> naked-eye observable.
+        // DAYLIGHT = sunlit but NOT observable: below the horizon, or the observer's
+        //            sky is brighter than astronomical twilight (it is not literally "day").
+        // ECLIPSED = satellite is in Earth's shadow.
         enum class State { VISIBLE, DAYLIGHT, ECLIPSED };
         static Vector3 getSunPositionECI(const TimePoint& t);
         // New Helper to get Lat/Lon of Sun

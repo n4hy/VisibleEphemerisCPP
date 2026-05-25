@@ -20,8 +20,9 @@ namespace ve {
         static std::string credentialsHelpText();
 
         // Fetch gp_history for the given NORAD IDs at (or just before) target_date.
-        // Writes 3LE (three-line element set) output to dest_path; one "latest TLE whose
-        // epoch <= target_date, within +/- window_days" per NORAD ID.
+        // Writes 3LE (three-line element set) output to dest_path: one TLE per NORAD ID,
+        // the latest whose epoch falls in [target_date - window_days, target_date]
+        // (the window is one-sided — never an epoch after the target instant).
         // Returns true on success.
         bool fetchHistoricalTLEs(const std::vector<int>& norad_ids,
                                  std::time_t target_date,

@@ -1,13 +1,21 @@
 cmake_minimum_required(VERSION 3.14)
 
-# Set specific versioned binaries for Ubuntu 24.04
-set(CMAKE_C_COMPILER "clang")
-set(CMAKE_CXX_COMPILER "clang++")
+# Prefer Clang (the project's reference compiler on Ubuntu) when it is installed,
+# but fall back to the system default (e.g. GCC) so the build works without Clang.
+# An explicit -DCMAKE_CXX_COMPILER=... always takes precedence.
+if(NOT DEFINED CMAKE_CXX_COMPILER)
+    find_program(CLANG_C_BIN clang)
+    find_program(CLANG_CXX_BIN clang++)
+    if(CLANG_C_BIN AND CLANG_CXX_BIN)
+        set(CMAKE_C_COMPILER "${CLANG_C_BIN}")
+        set(CMAKE_CXX_COMPILER "${CLANG_CXX_BIN}")
+    endif()
+endif()
 
 project(VisibleEphemeris)
 
-#set(CMAKE_CXX_STANDARD 17)
-#set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(ENABLE_HAMLIB "Enable Hamlib support" ON)
 

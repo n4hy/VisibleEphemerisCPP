@@ -29,13 +29,14 @@ void print_help() {
               << "  --lon <deg>       Override Longitude\n"
               << "  --alt <km>        Override Altitude (km)\n"
               << "  --minel <deg>     Minimum elevation for display (default 0)\n"
-              << "  --max_sats <N>    Override Max Satellites\n"
+              << "  --maxsats <N>     Override Max Satellites (alias: --max_sats)\n"
               << "  --trail_mins <N>  Override Trail Length (+/- minutes)\n"
               << "  --maxapo <km>     Maximum apogee filter (km). -1 disables.\n"
               << "  --refresh         Force fresh TLE\n"
               << "  --groupsel <list> Comma-separated groups (e.g. \"amateur,weather,stations\")\n"
               << "  --satsel <list>   Comma-separated Satellite Names (Overrules groupsel)\n"
-              << "  --visible <bool>  Limit to Optically Visible only (true/false)\n"
+              << "  --visible         Optical Mode: show only naked-eye visible sats\n"
+              << "  --no-visible      Radio Mode: show ALL sats (color-coded by visibility)\n"
               << "  --time <str>      Simulate UTC time (e.g. \"2019-06-15 12:00:00\"). Past\n"
               << "                    dates >24h ago fetch historical TLEs from Space-Track.\n"
               << "  --deltaT <sec>    Time increment between calculations (0.001-60, default 1)\n"
@@ -219,18 +220,25 @@ int main(int argc, char* argv[]) {
         else if (arg == "--lat") { if (i+1 < argc) config.lat = std::stod(argv[++i]); }
         else if (arg == "--lon") { if (i+1 < argc) config.lon = std::stod(argv[++i]); }
         else if (arg == "--alt") { if (i+1 < argc) config.alt = std::stod(argv[++i]); }
-        else if (arg == "--max_sats") { if (i+1 < argc) config.max_sats = std::stoi(argv[++i]); }
+        else if (arg == "--max_sats" || arg == "--maxsats") { if (i+1 < argc) config.max_sats = std::stoi(argv[++i]); }
         else if (arg == "--trail_mins") { if (i+1 < argc) config.trail_length_mins = std::stoi(argv[++i]); }
         else if (arg == "--maxapo" || arg == "--map_apo") { if (i+1 < argc) config.max_apo = std::stod(argv[++i]); }
         else if (arg == "--minel") { if (i+1 < argc) config.min_el = std::stod(argv[++i]); }
         else if (arg == "--groupsel") { if (i+1 < argc) config.group_selection = argv[++i]; config.sat_selection = ""; } 
         else if (arg == "--satsel") { if (i+1 < argc) config.sat_selection = argv[++i]; } 
         else if (arg == "--visible" || arg == "-visible") {
+            // Bare "--visible" enables Optical Mode (matches Python/README). An optional
+            // explicit boolean ("--visible true/false") is still accepted for back-compat.
             if (i+1 < argc) {
-                std::string val = argv[++i];
-                config.visible_only = (val == "true" || val == "1");
+                std::string val = argv[i+1];
+                if (val == "true" || val == "1")       { config.visible_only = true;  i++; }
+                else if (val == "false" || val == "0") { config.visible_only = false; i++; }
+                else                                    { config.visible_only = true; }
+            } else {
+                config.visible_only = true;
             }
         }
+        else if (arg == "--no-visible") { config.visible_only = false; }
 
         // HARDWARE CONTROL FLAGS (Requires Argument)
         else if (arg == "--radio") {

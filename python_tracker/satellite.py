@@ -112,20 +112,22 @@ class Satellite:
         self.lon = subpoint.longitude.degrees
         self.alt_km = subpoint.elevation.km
 
-        # 4. Visibility Logic
-        # VISIBLE = Sunlit Satellite AND Dark Observer
-        # DAYLIGHT = Sunlit Satellite AND Sunlit Observer
-        # NO = Eclipsed Satellite
-
-        sat_sunlit = geocentric.is_sunlit(observer.eph)
-        obs_sunlit = observer.is_sunlit(t)
+        # 4. Visibility Logic (must match C++ VisibilityCalculator::calculateState)
+        # YES (VISIBLE) = satellite above the horizon (el > 0)
+        #                 AND observer in astronomical twilight or darker (sun <= -12 deg)
+        #                 AND satellite sunlit (not in Earth's shadow)
+        # DAY (DAYLIGHT) = sunlit satellite that fails one of the above (daylight/twilight
+        #                  or below the horizon) — present but not visually observable
+        # NO  (ECLIPSED) = satellite in Earth's shadow
+        sat_sunlit = geocentric.is_sunlit(observer.eph)  # correct use of is_sunlit (satellite)
+        sun_alt = observer.sun_altitude_deg(t)
 
         if not sat_sunlit:
             self.visibility = "NO"
-        elif not obs_sunlit:
+        elif self.el > 0.0 and sun_alt <= -12.0:
             self.visibility = "YES" # Visual pass!
         else:
-            self.visibility = "DAY" # Radio pass
+            self.visibility = "DAY" # Sunlit but not naked-eye visible
 
         # 5. Flare Status (simplified - check for Iridium-like sun glints)
         self.flare_status = 0

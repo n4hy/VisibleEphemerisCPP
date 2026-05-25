@@ -1,6 +1,15 @@
-skyfield
-requests
-fastapi
-uvicorn
-pyyaml
-numpy
+# Visible Ephemeris - Python tracker dependencies
+# Pinned to versions verified on Python 3.14.4 (2026-05-25): venv builds clean
+# and the Python/C++ equivalence test passes (27/30, 0 failures).
+# Install:  python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+#
+# These are direct dependencies; transitive deps (sgp4, jplephem, starlette,
+# pydantic, click, h11, anyio, certifi, urllib3, idna, charset-normalizer, etc.)
+# are resolved automatically by pip.
+
+skyfield==1.54
+requests==2.34.2
+fastapi==0.136.3
+uvicorn==0.48.0
+PyYAML==6.0.3
+numpy==2.4.6
