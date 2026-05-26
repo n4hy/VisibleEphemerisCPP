@@ -61,6 +61,9 @@ endif()
 set(SOURCES
     src/main.cpp
     src/satellite.cpp
+    src/ephemeris.cpp
+    src/force_model.cpp
+    src/numerical_propagator.cpp
     src/observer.cpp
     src/visibility.cpp
     src/pass_predictor.cpp
@@ -89,3 +92,62 @@ target_link_libraries(VisibleEphemeris PRIVATE ${LIBS})
 
 # Installation
 install(TARGETS VisibleEphemeris DESTINATION bin)
+
+# ----------------------------------------------------------------------------
+# Optional unit tests:  cmake .. -DBUILD_TESTS=ON  &&  ctest
+# ----------------------------------------------------------------------------
+option(BUILD_TESTS "Build unit tests" OFF)
+if(BUILD_TESTS)
+    enable_testing()
+    add_executable(test_hpop
+        unittests/test_hpop.cpp
+        src/ephemeris.cpp
+        src/force_model.cpp
+        src/numerical_propagator.cpp
+        src/logger.cpp)
+    target_include_directories(test_hpop PRIVATE include ${SGP4_INCLUDE_DIR})
+    target_link_libraries(test_hpop PRIVATE ${SGP4_LIB})
+    add_test(NAME hpop COMMAND test_hpop)
+endif()
+
+# ----------------------------------------------------------------------------
+# Optional: pybind11 module exposing the High-Precision Orbit Propagator.
+#   cmake .. -DBUILD_PYTHON_BINDINGS=ON
+# Produces an importable `ve_hpop` Python extension. pybind11 is located via
+# find_package, then an installed pip package, and finally fetched from GitHub.
+# ----------------------------------------------------------------------------
+option(BUILD_PYTHON_BINDINGS "Build the ve_hpop pybind11 module" OFF)
+if(BUILD_PYTHON_BINDINGS)
+    find_package(pybind11 CONFIG QUIET)
+    if(NOT pybind11_FOUND)
+        find_program(PYTHON_EXECUTABLE NAMES python3 python)
+        if(PYTHON_EXECUTABLE)
+            execute_process(
+                COMMAND ${PYTHON_EXECUTABLE} -m pybind11 --cmakedir
+                OUTPUT_VARIABLE PYBIND11_CMAKEDIR
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                RESULT_VARIABLE PYBIND11_PROBE)
+            if(PYBIND11_PROBE EQUAL 0 AND PYBIND11_CMAKEDIR)
+                find_package(pybind11 CONFIG QUIET PATHS ${PYBIND11_CMAKEDIR})
+            endif()
+        endif()
+    endif()
+    if(NOT pybind11_FOUND)
+        message(STATUS "pybind11 not found locally; fetching from GitHub...")
+        include(FetchContent)
+        FetchContent_Declare(pybind11
+            GIT_REPOSITORY https://github.com/pybind/pybind11.git
+            GIT_TAG v2.13.6)
+        FetchContent_MakeAvailable(pybind11)
+    endif()
+
+    pybind11_add_module(ve_hpop
+        src/python_bindings.cpp
+        src/ephemeris.cpp
+        src/force_model.cpp
+        src/numerical_propagator.cpp
+        src/logger.cpp)
+    target_include_directories(ve_hpop PRIVATE include ${SGP4_INCLUDE_DIR})
+    target_link_libraries(ve_hpop PRIVATE ${SGP4_LIB})
+    message(STATUS "Python bindings (ve_hpop) will be built.")
+endif()

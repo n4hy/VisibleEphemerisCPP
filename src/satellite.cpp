@@ -1,3 +1,10 @@
+// satellite.cpp - Satellite orbital-model implementation.
+// The constructor parses the TLE and builds an SGP4 propagator (synthetic
+// SUN/MOON objects get reserved negative ids). enableHighPrecision() lazily
+// attaches the numerical HPOP backend, seeding its drag model with the TLE B*.
+// propagate() and getGeodetic() dispatch to HPOP when present, otherwise SGP4;
+// HPOP geodetic reuses libsgp4's WGS84 ECI->geodetic conversion so both paths
+// agree. calculateGroundTrack()/passes provide the cached display data.
 #include "satellite.hpp"
 #include "logger.hpp"
 #include <iostream>
@@ -33,6 +40,7 @@ namespace ve {
           norad_id_(other.norad_id_),
           tle_object_(std::move(other.tle_object_)),
           sgp4_object_(std::move(other.sgp4_object_)),
+          hpop_(std::move(other.hpop_)),
           full_track_(std::move(other.full_track_)),
           predicted_passes_(std::move(other.predicted_passes_))
     {
@@ -62,7 +70,21 @@ namespace ve {
         } catch(...) { return 0.0; }
     }
 
+    void Satellite::enableHighPrecision(ForceParams fp, const IntegratorParams& ip) {
+        if (!tle_object_) return;
+        std::lock_guard<std::mutex> lock(sat_mutex_);
+        fp.bstar = tle_object_->BStar();   // drag ballistic coefficient source
+        auto hp = std::make_unique<NumericalPropagator>(*tle_object_, fp, ip);
+        if (hp->valid()) {
+            hpop_ = std::move(hp);
+        } else {
+            Logger::log("HPOP init failed for '" + name_ + "'; staying on SGP4");
+        }
+    }
+
     std::pair<Vector3, Vector3> Satellite::propagate(const TimePoint& t) const {
+        // High-precision path: the numerical propagator is internally synchronized.
+        if (hpop_) return hpop_->propagate(t);
         if (!sgp4_object_) return {{0,0,0},{0,0,0}};
         try {
             std::lock_guard<std::mutex> lock(sat_mutex_);
@@ -75,15 +97,26 @@ namespace ve {
             return {{pos.x, pos.y, pos.z}, {vel.x, vel.y, vel.z}};
         } catch (...) { return {{0,0,0},{0,0,0}}; }
     }
-    
+
     Geodetic Satellite::getGeodetic(const TimePoint& t) const {
+        std::time_t tt = Clock::to_time_t(t);
+        std::tm gmt;
+        gmtime_r(&tt, &gmt);
+        libsgp4::DateTime dt(gmt.tm_year + 1900, gmt.tm_mon + 1, gmt.tm_mday, gmt.tm_hour, gmt.tm_min, gmt.tm_sec);
+        if (hpop_) {
+            // Integrate to t, then reuse libsgp4's WGS84 ECI->geodetic conversion
+            // (identical method to the SGP4 path) on the numerical position.
+            try {
+                auto [r, v] = hpop_->propagate(t);
+                (void)v;
+                libsgp4::Eci eci(dt, libsgp4::Vector(r.x, r.y, r.z));
+                libsgp4::CoordGeodetic geo = eci.ToGeodetic();
+                return { geo.latitude * RAD2DEG, geo.longitude * RAD2DEG, geo.altitude };
+            } catch (...) { return {0,0,0}; }
+        }
         if (!sgp4_object_) return {0,0,0};
         try {
             std::lock_guard<std::mutex> lock(sat_mutex_);
-            std::time_t tt = Clock::to_time_t(t);
-            std::tm gmt;
-            gmtime_r(&tt, &gmt);
-            libsgp4::DateTime dt(gmt.tm_year + 1900, gmt.tm_mon + 1, gmt.tm_mday, gmt.tm_hour, gmt.tm_min, gmt.tm_sec);
             libsgp4::Eci eci = sgp4_object_->FindPosition(dt);
             libsgp4::CoordGeodetic geo = eci.ToGeodetic();
             return { geo.latitude * RAD2DEG, geo.longitude * RAD2DEG, geo.altitude };

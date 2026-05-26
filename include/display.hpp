@@ -1,3 +1,11 @@
+// display.hpp - ncurses terminal user interface.
+//
+// DisplayRow is one fully-computed table row (name, az/el/range, range rate,
+// sub-satellite lat/lon, apogee, visibility state, next AOS/LOS event, flare
+// status) - the common record shared by the terminal, web, and text outputs.
+// Display renders the scrollable satellite table plus header/footer, handles
+// keyboard input, and caches the last rendered frame as text (thread-safe via
+// frame_mutex_) so the text-mirror server can serve it.
 #pragma once
 #include <ncurses.h>
 #include <vector>

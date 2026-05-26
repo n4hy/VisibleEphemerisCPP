@@ -1,3 +1,8 @@
+// rotator.cpp - Hamlib antenna-rotator control implementation.
+// connect() initializes a NET rotctl backend (model 2) pointed at host:port and
+// opens it; setPosition() commands an azimuth/elevation. Every Hamlib call is
+// wrapped in `#ifdef ENABLE_HAMLIB`, so when built without Hamlib the class
+// degrades to harmless no-ops that simply log that support is disabled.
 #include "rotator.hpp"
 #include "logger.hpp"
 #include <iostream>

@@ -1,3 +1,8 @@
+"""HTTP text-mirror server for the Python tracker.
+
+Serves the most recent rendered terminal frame as an auto-refreshing HTML page
+on port 12345. Functional twin of the C++ TextServer (src/text_server.cpp).
+"""
 import socket
 import threading
 import time

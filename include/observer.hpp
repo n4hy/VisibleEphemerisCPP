@@ -1,3 +1,11 @@
+// observer.hpp - Ground station geometry.
+//
+// Holds the observer's WGS84 geodetic location and converts a satellite's ECI
+// state into observer-relative quantities: the topocentric look angle
+// (azimuth/elevation/range) and the line-of-sight range rate. Internally it
+// builds the observer's own ECI position/velocity from its geodetic coordinates
+// and the Greenwich sidereal angle (getGST). The HPOP Python backend mirrors
+// this exact geometry in python_tracker/hpop.py.
 #pragma once
 #include "types.hpp"
 

@@ -1,3 +1,4 @@
+"""Minimal reproduction script for a Skyfield Time truthiness issue (debug aid)."""
 from skyfield.api import load
 ts = load.timescale()
 t = ts.now()

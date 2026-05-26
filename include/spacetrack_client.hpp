@@ -1,3 +1,8 @@
+// spacetrack_client.hpp - Space-Track.org historical TLE client.
+//
+// Fetches the element set that was current on a given past date via the
+// gp_history endpoint (used when --time selects a date >24 h ago). See the
+// class comment below for the credential-resolution order and fetch semantics.
 #pragma once
 #include <string>
 #include <vector>

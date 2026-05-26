@@ -1,3 +1,10 @@
+// tle_manager.hpp - TLE acquisition, caching, and satellite construction.
+//
+// Loads element sets either live from Celestrak (by group name or satellite
+// name) or historically from Space-Track.org (the *ForDate variants, via
+// SpaceTrackClient), downloading and caching under cache_dir and parsing them
+// into Satellite objects. Also backs the Mission Planner UI with master-catalog
+// search and custom-group persistence. Network I/O uses libcurl.
 #pragma once
 #include <string>
 #include <vector>

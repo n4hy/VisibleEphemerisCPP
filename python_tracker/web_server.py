@@ -1,3 +1,8 @@
+"""Web dashboard for the Python tracker (FastAPI + uvicorn).
+
+Serves the browser UI and a JSON feed of the current satellite table. Functional
+twin of the C++ WebServer's dashboard role (src/web_server.cpp).
+"""
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles

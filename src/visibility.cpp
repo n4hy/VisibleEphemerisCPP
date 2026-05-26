@@ -1,3 +1,11 @@
+// visibility.cpp - Optical visibility and flare classification implementation.
+// getSunPositionECI() uses a compact low-order solar series (mean longitude +
+// equation of centre, rotated by the obliquity) good to ~0.01 deg. calculateState()
+// decides VISIBLE / DAYLIGHT / ECLIPSED from the satellite-Sun angle vs the
+// Earth-shadow (umbra) half-angle and the observer's solar depression (the
+// -12 deg astronomical-twilight threshold). checkFlare() models a nadir-facing
+// flat reflector and tests how close its specular reflection points at the
+// observer, for Iridium-style glints on sunlit low-Earth-orbit satellites.
 #include "visibility.hpp"
 #include <cmath>
 #include <iostream>

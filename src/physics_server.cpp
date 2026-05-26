@@ -1,3 +1,9 @@
+// physics_server.cpp - TCP physics-stream server implementation.
+// Two threads: acceptLoop() admits clients (non-blocking listen socket,
+// TCP_NODELAY for low latency) into a mutex-guarded set; broadcastLoop() pushes
+// each newly-updated frame - terminated by a "---END_FRAME---" marker for easy
+// client framing - to every client, pruning any that error on send. Frames are
+// only buffered while clients are connected, so the server is idle when unused.
 #include "physics_server.hpp"
 #include "logger.hpp"
 #include <iostream>

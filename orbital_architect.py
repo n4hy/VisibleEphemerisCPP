@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""Orbital Architect - interactive terminal tool to assemble a tracking selection.
+
+Loads the on-disk TLE cache (tle_cache/) into a searchable catalog, lets you
+browse/search and pick satellites, and writes the chosen selection and observer
+settings to config.yaml for the tracker to use. Standalone CLI utility (ANSI
+terminal UI); not part of the tracker's runtime path.
+"""
 import os
 import sys
 import glob

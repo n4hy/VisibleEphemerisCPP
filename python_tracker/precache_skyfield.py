@@ -1,3 +1,7 @@
+"""Utility: pre-download Skyfield data files (timescale + DE421 ephemeris).
+
+Run once so the first tracker launch is not blocked on network fetches.
+"""
 from skyfield.api import load
 
 print("Attempting to pre-cache Skyfield data...")

@@ -1,3 +1,11 @@
+// web_server.hpp - HTTP server for the web dashboard and Mission Planner.
+//
+// Serves the browser UI and a JSON feed of the current satellite table on a
+// port (default 8080). Two roles selected at construction: dashboard mode
+// (read-only live view) and builder/Mission Planner mode (interactive group
+// building that produces an AppConfig the main program picks up via
+// popPendingConfig()). Also reports the operator-selected NORAD id back to the
+// tracker for radio/rotator control. Runs its own server thread.
 #pragma once
 #include <string>
 #include <vector>

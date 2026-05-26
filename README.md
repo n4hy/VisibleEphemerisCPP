@@ -13,6 +13,7 @@ Both **C++** and **Python** implementations are provided with identical function
 
 ### Tracking Engine
 * **SGP4/SDP4 Propagation**: Uses `libsgp4` (C++) or `Skyfield` (Python) for high-precision orbital math.
+* **High-Precision Orbit Propagator (HPOP)**: Optional `--hpop` mode that numerically integrates a full force model — EGM96 gravity (degree/order 20), Sun/Moon third-body, atmospheric drag, and solar radiation pressure — with an adaptive Fehlberg RK7(8) integrator, seeded from the TLE state vector at epoch. Available in both C++ and Python (via the `ve_hpop` pybind11 module). See [High-Precision Orbit Propagator](#high-precision-orbit-propagator-hpop).
 * **Massive Scale**: Tracks the entire NORAD Active Catalog (13,000+ objects) simultaneously.
 * **Smart Caching**: Automatic TLE downloading and caching from Celestrak with 24-hour auto-refresh cycle. Historical TLEs (`tle_cache/historical/YYYY-MM-DD/`) are cached permanently since archived elements never change.
 * **Multi-Group Selection**: Track specific combinations (e.g., `amateur,weather,stations`) using the `group_selection` config or `--groupsel` argument.
@@ -93,6 +94,14 @@ mkdir build && cd build
 cmake ..                 # auto-selects clang if present, else GCC; add -DENABLE_HAMLIB=OFF to skip Hamlib
 make -j$(nproc)
 ```
+
+Optional CMake switches:
+
+| Option | Default | Effect |
+|:--|:--|:--|
+| `-DENABLE_HAMLIB=OFF` | ON | Skip Hamlib radio/rotator support |
+| `-DBUILD_PYTHON_BINDINGS=ON` | OFF | Build the `ve_hpop` pybind11 module (see [HPOP](#high-precision-orbit-propagator-hpop)) |
+| `-DBUILD_TESTS=ON` | OFF | Build the unit tests; run with `ctest` |
 
 If `libsgp4` is installed to a non-standard prefix (e.g. `~/sgp4/build/install`, where `build.sh` puts it), put it on the library path at runtime:
 ```bash
@@ -175,8 +184,88 @@ Both C++ and Python accept the same flag names unless noted.
 | `--refresh` | Force fresh download of TLE data (C++ only) | false |
 | `--time <str>` | Simulate time in UTC (`"YYYY-MM-DD HH:MM:SS"`). Past dates >24 h ago trigger historical TLE retrieval from Space-Track — see [Historical Tracking](#historical-tracking-past-dates) | Real-time |
 | `--deltaT <sec>` | Update interval in seconds (0.001-60) | 1.0 |
+| `--hpop` | Use the High-Precision Orbit Propagator instead of SGP4 (see [below](#high-precision-orbit-propagator-hpop)) | off |
+| `--hpop-degree <N>` | HPOP geopotential degree/order (1-20) | 20 |
+| `--no-drag` | HPOP: disable atmospheric drag | drag on |
+| `--no-srp` | HPOP: disable solar radiation pressure | srp on |
+| `--no-thirdbody` | HPOP: disable Sun/Moon third-body perturbations | on |
 | `--port <A,B,C>` | Override network ports (web,text,physics) — C++ only | 8080,12345,12346 |
 | `--groupbuild` | Enter Mission Planner builder mode (C++ only) | - |
+
+---
+
+## High-Precision Orbit Propagator (HPOP)
+
+By default the tracker propagates orbits analytically with **SGP4**. The `--hpop`
+option instead **numerically integrates a full force model**, which is more
+accurate than SGP4's truncated secular/periodic theory — especially over multi-
+hour to multi-day arcs and for non-spherical-gravity-sensitive orbits.
+
+### How the initial state is obtained
+
+A TLE does **not** contain an osculating state vector — lines 1–2 hold *SGP4 mean
+elements*. HPOP therefore converts the TLE to a state vector the only correct
+way: it evaluates SGP4 **at the element-set epoch** to produce an osculating ECI
+(TEME) position/velocity `(r₀, v₀)`, and uses that as the initial condition for
+numerical integration. The integration frame is the same TEME-as-pseudo-inertial
+frame SGP4 produces, so all downstream geometry (look angles, ground track,
+visibility) is unchanged.
+
+### Force model
+
+| Perturbation | Model |
+|:--|:--|
+| Earth gravity | **EGM96** spherical harmonics to degree/order 20 (Cunningham/Pines recursion), evaluated Earth-fixed via GMST. Coefficients embedded in the binary. |
+| Third body | Sun and Moon point-mass (Montenbruck-Gill analytic ephemerides) |
+| Atmospheric drag | Piecewise-exponential density (Vallado); co-rotating atmosphere. Ballistic coefficient `Cd·A/m = 2·B*/0.15696615` derived from the TLE B* term |
+| Solar radiation pressure | `4.56e-6 N/m²` at 1 AU, cylindrical Earth-shadow; `Cr·A/m` shared from the drag area |
+
+Integration uses an **adaptive Fehlberg RK7(8)** scheme (8th-order solution,
+embedded 7th-order error control). Verification: HPOP at epoch reproduces the
+SGP4 seed exactly; two-body semi-major axis is conserved to < 1 mm over a day.
+
+> HPOP is heavier than SGP4. It is best for a focused set of satellites
+> (`--satsel`) rather than the full 13,000-object catalog.
+
+### Running
+
+```bash
+# C++ — track the ISS with the full high-precision model
+LD_LIBRARY_PATH=~/sgp4/build/install/lib ./VisibleEphemeris --satsel ISS --hpop
+
+# Geopotential to degree 10, gravity + Sun/Moon only (no drag/SRP)
+./VisibleEphemeris --satsel ISS --hpop --hpop-degree 10 --no-drag --no-srp
+
+# Python tracker
+python3 main.py --satsel ISS --hpop
+```
+
+### Python module (pybind11)
+
+The same C++ propagator is exposed to Python as the `ve_hpop` module. Build it
+with the `BUILD_PYTHON_BINDINGS` CMake option (pybind11 is located via
+`find_package`/pip, or fetched from GitHub if absent):
+
+```bash
+cd build
+cmake .. -DBUILD_PYTHON_BINDINGS=ON -DPython_EXECUTABLE=$(which python3)
+cmake --build . --target ve_hpop      # -> ve_hpop.<abi>.so
+```
+
+The Python tracker auto-discovers the module in `../build`; you can also add the
+build directory to `PYTHONPATH`. Usage:
+
+```python
+import ve_hpop
+p = ve_hpop.Propagator(name, line1, line2, degree=20,
+                       drag=True, srp=True, thirdbody=True)  # optional mass_kg/area/Cd/Cr
+r, v = p.propagate_jd(jd)             # ECI/TEME position (km) & velocity (km/s)
+r, v = p.propagate(datetime_utc)      # also accepts a Python datetime
+lat, lon, alt = p.geodetic_jd(jd)     # WGS84 sub-satellite point
+print(p.epoch_jd, p.cd_area_over_m, p.drag_enabled)
+# module helpers: ve_hpop.sun_position_eci(jd), moon_position_eci(jd),
+#                 atmosphere_density(alt_km), gmst_rad(jd)
+```
 
 ---
 

@@ -1,3 +1,8 @@
+// test_flare.cpp - Unit tests for VisibilityCalculator::checkFlare().
+// Exercises the specular-reflection geometry with hand-constructed cases: a
+// perfect nadir flare (HIT), small angular offsets (NEAR / MISS), a too-high
+// orbit (flares only modeled for LEO), and a daylight observer (fails the
+// twilight gate). Each case asserts the expected 0/1/2 flare code.
 #include <iostream>
 #include <cassert>
 #include <cmath>

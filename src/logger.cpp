@@ -1,3 +1,7 @@
+// logger.cpp - Thread-safe append logger implementation.
+// The output stream and its mutex are static members opened once at startup;
+// every log() call timestamps the message (local time) and flushes immediately
+// so the log survives a crash.
 #include "logger.hpp"
 #include <iostream>
 #include <ctime>

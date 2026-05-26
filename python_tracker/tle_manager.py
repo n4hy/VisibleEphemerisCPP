@@ -1,3 +1,10 @@
+"""TLE acquisition and caching for the Python tracker.
+
+Downloads live element sets from Celestrak (by group or satellite name) and
+historical sets from Space-Track.org gp_history, caches them on disk with a
+freshness policy, and parses them into TLE dicts. Functional twin of the C++
+TLEManager + SpaceTrackClient.
+"""
 import os
 import datetime
 import hashlib

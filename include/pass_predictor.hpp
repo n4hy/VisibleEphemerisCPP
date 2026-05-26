@@ -1,3 +1,10 @@
+// pass_predictor.hpp - AOS/LOS pass prediction.
+//
+// Predicts horizon crossings (Acquisition/Loss Of Signal) for a satellite over
+// a search window: a coarse time scan brackets each elevation zero-crossing,
+// then Newton's method refines it to the exact crossing time. Results are
+// returned as PassEvent records (time + is_aos flag). Works against whatever
+// propagator the Satellite uses, so it is correct for both SGP4 and HPOP.
 #pragma once
 #include "satellite.hpp"
 #include "observer.hpp"

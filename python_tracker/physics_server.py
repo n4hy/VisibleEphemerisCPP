@@ -1,3 +1,9 @@
+"""TCP physics-stream server for the Python tracker.
+
+Broadcasts marker-delimited full-state frames to connected clients on port 12346,
+buffering data only while clients are attached. Functional twin of the C++
+PhysicsServer (src/physics_server.cpp).
+"""
 import socket
 import threading
 import time

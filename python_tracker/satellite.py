@@ -1,7 +1,17 @@
+"""Per-satellite orbital model for the Python tracker.
+
+Wraps a Skyfield EarthSatellite (SGP4) and, optionally, the compiled ve_hpop
+High-Precision Orbit Propagator via the `hpop` backend. Computes the look angle,
+range rate, sub-satellite point, optical visibility, Iridium flare status,
+ground track, and pass predictions. The HPOP path reproduces the C++ observer
+and visibility geometry so the two high-precision implementations agree.
+Functional twin of the C++ Satellite (src/satellite.cpp).
+"""
 from skyfield.api import load, EarthSatellite, wgs84
 import datetime
 import math
 import numpy as np
+import hpop  # High-Precision Orbit Propagator backend (wraps ve_hpop)
 
 # Singleton timescale instance to avoid repeated loads
 _timescale = None
@@ -13,7 +23,7 @@ def _get_timescale():
     return _timescale
 
 class Satellite:
-    def __init__(self, tle):
+    def __init__(self, tle, hpop_opts=None):
         self.name = tle['name']
         self.line1 = tle['line1']
         self.line2 = tle['line2']
@@ -21,6 +31,19 @@ class Satellite:
         ts = _get_timescale()
         self.skyfield_sat = EarthSatellite(self.line1, self.line2, self.name, ts)
         self.norad_id = self.skyfield_sat.model.satnum
+
+        # Optional High-Precision Orbit Propagator backend. When set, the
+        # numerical force-model integrator replaces SGP4/Skyfield for the
+        # satellite state. Synthetic Sun/Moon objects (norad <= 0) are skipped.
+        self.hpop = None
+        if hpop_opts and self.norad_id and self.norad_id > 0:
+            try:
+                self.hpop = hpop.make_propagator(tle, **hpop_opts)
+                if not self.hpop.valid:
+                    self.hpop = None
+            except Exception as e:
+                print(f"[HPOP] init failed for {self.name}: {e}; using Skyfield")
+                self.hpop = None
 
         # State Cache
         self.az = 0.0
@@ -68,7 +91,52 @@ class Satellite:
         """Check if satellite appears to have decayed (apogee < 80km)."""
         return self.apogee < 80.0
 
+    def _to_utc_datetime(self, t_now):
+        if isinstance(t_now, datetime.datetime):
+            dt = t_now
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.timezone.utc)
+            return dt
+        # Skyfield Time
+        return t_now.utc_datetime()
+
+    def update_position_hpop(self, observer, t_now, trail_mins=0):
+        """HPOP backend update mirroring the C++ high-precision path."""
+        dt = self._to_utc_datetime(t_now)
+        st = hpop.compute_state(self.hpop, observer.lat_deg, observer.lon_deg,
+                                observer.alt_km, dt)
+        self.az = st["az"]
+        self.el = st["el"]
+        self.range = st["range_km"]
+        self.range_rate = st["range_rate"]
+        self.lat = st["lat"]
+        self.lon = st["lon"]
+        self.alt_km = st["alt_km"]
+        self.visibility = st["visibility"]
+
+        # Flare status (parity with Skyfield path: simple sun-sat-observer angle for Iridium).
+        self.flare_status = 0
+        if self.visibility == "YES" and "IRIDIUM" in self.name.upper():
+            sat_to_sun = st["sun_eci"] - st["sat_eci"]
+            sat_to_obs = st["obs_eci"] - st["sat_eci"]
+            n1 = np.linalg.norm(sat_to_sun)
+            n2 = np.linalg.norm(sat_to_obs)
+            if n1 > 0 and n2 > 0:
+                cos_a = np.dot(sat_to_sun / n1, sat_to_obs / n2)
+                angle_deg = math.degrees(math.acos(max(-1.0, min(1.0, cos_a))))
+                if angle_deg < 0.5:
+                    self.flare_status = 2
+                elif angle_deg < 1.0:
+                    self.flare_status = 1
+
+        if trail_mins > 0:
+            self.trail = hpop.ground_track(self.hpop, dt, trail_mins)
+
     def update_position(self, observer, t_now, trail_mins=0):
+        if self.hpop is not None:
+            self.update_position_hpop(observer, t_now, trail_mins)
+            return
+
         # Ensure t_now is a Skyfield Time object
         ts = _get_timescale()
         if isinstance(t_now, datetime.datetime):

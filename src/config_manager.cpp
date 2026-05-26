@@ -1,3 +1,9 @@
+// config_manager.cpp - Load/save AppConfig from the config file.
+// parse() splits each "key: value" line into a map (clean() strips control
+// chars, whitespace, and wrapping quotes); load() applies known keys onto a
+// default-initialized AppConfig (including legacy aliases like show_all /
+// show_all_visible / radio_mode that invert into visible_only); save() writes
+// the settings back. Unparseable values are caught and left at their defaults.
 #include "config_manager.hpp"
 #include <fstream>
 #include <sstream>

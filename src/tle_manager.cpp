@@ -1,3 +1,9 @@
+// tle_manager.cpp - TLE acquisition, caching, and parsing implementation.
+// Live element sets are downloaded from Celestrak (per group/name) with libcurl
+// and cached under cache_dir_ with a freshness check; historical sets are routed
+// through SpaceTrackClient and cached per date. parseFile() turns 3LE text into
+// Satellite objects. Also implements the Mission Planner support paths: an
+// in-memory master catalog with substring search and custom-group persistence.
 #include "tle_manager.hpp"
 #include "spacetrack_client.hpp"
 #include "logger.hpp"

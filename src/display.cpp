@@ -1,3 +1,10 @@
+// display.cpp - ncurses terminal UI implementation.
+// The constructor initializes curses (raw mode, no echo, hidden cursor, 100 ms
+// input timeout) and a colour palette keyed to visibility/flare state. update()
+// draws the header, the elevation-sorted satellite table (with a scrollbar and
+// below-minimum-elevation dimming) and footer, and stores a plain-text snapshot
+// of the frame (frame_mutex_) for the text-mirror server. handleInput() drives
+// scrolling and a confirm-on-quit flow.
 #include "display.hpp"
 #include <algorithm>
 #include <iomanip>

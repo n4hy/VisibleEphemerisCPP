@@ -1,3 +1,10 @@
+// observer.cpp - Ground-station geometry implementation.
+// getGST() gives the Greenwich sidereal angle; getPositionECI() places the
+// observer on the WGS84 ellipsoid in ECEF and rotates to ECI by that angle;
+// getVelocityECI() is the rigid-body rotation velocity (omega x r). The look
+// angle projects the satellite-minus-observer vector into the topocentric
+// South/East/Zenith basis to obtain azimuth, elevation, and slant range. These
+// formulas are mirrored exactly by the HPOP Python backend.
 #include "observer.hpp"
 #include <cmath>
 
@@ -17,8 +24,10 @@ namespace ve {
     }
 
     Vector3 Observer::getPositionECI(const TimePoint& t) const {
-        double lat_rad = location_.lat_deg * DEG2RAD; 
+        double lat_rad = location_.lat_deg * DEG2RAD;
         double lon_rad = location_.lon_deg * DEG2RAD;
+        // WGS84 ellipsoid: semi-major axis a, flattening f, eccentricity^2 e2.
+        // N is the radius of curvature in the prime vertical at this latitude.
         double a = 6378.137; double f = 1.0 / 298.257223563; double e2 = 2*f - f*f;
         double N = a / std::sqrt(1 - e2 * std::sin(lat_rad) * std::sin(lat_rad));
         double x_ecf = (N + location_.alt_km) * std::cos(lat_rad) * std::cos(lon_rad);
@@ -46,14 +55,15 @@ namespace ve {
     }
 
     Observer::LookAngle Observer::calculateLookAngle(const Vector3& sat_eci, const TimePoint& t) const {
-        Vector3 obs_eci = getPositionECI(t); Vector3 r = sat_eci - obs_eci;
-        double lat = location_.lat_deg * DEG2RAD; double lon = location_.lon_deg * DEG2RAD; 
-        double th = getGST(t); double lst = th + lon;
-        double sL = std::sin(lat); double cL = std::cos(lat); 
+        Vector3 obs_eci = getPositionECI(t); Vector3 r = sat_eci - obs_eci; // line-of-sight vector
+        double lat = location_.lat_deg * DEG2RAD; double lon = location_.lon_deg * DEG2RAD;
+        double th = getGST(t); double lst = th + lon;                       // local sidereal time
+        double sL = std::sin(lat); double cL = std::cos(lat);
         double sLS = std::sin(lst); double cLS = std::cos(lst);
-        double s = sL*cLS*r.x + sL*sLS*r.y - cL*r.z;
-        double e = -sLS*r.x + cLS*r.y;
-        double z = cL*cLS*r.x + cL*sLS*r.y + sL*r.z;
+        // Rotate the line-of-sight into the topocentric South/East/Zenith basis.
+        double s = sL*cLS*r.x + sL*sLS*r.y - cL*r.z;  // South component
+        double e = -sLS*r.x + cLS*r.y;                // East component
+        double z = cL*cLS*r.x + cL*sLS*r.y + sL*r.z;  // Zenith (up) component
         double range = std::sqrt(s*s + e*e + z*z);
         double az = std::atan2(e, -s);
         if (az < 0) az += 2*PI;

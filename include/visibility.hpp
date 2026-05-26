@@ -1,3 +1,10 @@
+// visibility.hpp - Optical visibility and flare classification.
+//
+// Static helpers that decide whether a satellite is naked-eye VISIBLE, merely
+// DAYLIGHT (sunlit but not observable), or ECLIPSED (in Earth's shadow), using
+// an analytic Sun position and the Earth-shadow geometry. Also provides the
+// sub-solar geodetic point (for the map terminator) and an Iridium-style
+// specular-flare check. See the State enum below for the exact definitions.
 #pragma once
 #include "types.hpp"
 namespace ve {

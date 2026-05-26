@@ -1,3 +1,9 @@
+"""Configuration loader/saver for the Python tracker.
+
+Reads and writes config.yaml (YAML) into a settings dict, falling back to a
+built-in defaults table for any missing key. The functional twin of the C++
+ConfigManager (include/config_manager.hpp).
+"""
 import yaml
 import os
 

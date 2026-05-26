@@ -1,3 +1,10 @@
+"""Ground-station model for the Python tracker.
+
+Holds the observer's geodetic location (plain lat/lon/alt plus a Skyfield
+wgs84 site) and provides Skyfield-based look angles, solar altitude, and Sun
+position used for visibility classification. The plain coordinates are consumed
+by the HPOP backend's topocentric geometry. Functional twin of the C++ Observer.
+"""
 import datetime
 from skyfield.api import load, wgs84, Time
 
@@ -20,6 +27,10 @@ def _get_timescale():
 class Observer:
     def __init__(self, lat_deg, lon_deg, alt_km):
         self.ts = _get_timescale()
+        # Plain coordinates (used by the HPOP backend's topocentric geometry).
+        self.lat_deg = lat_deg
+        self.lon_deg = lon_deg
+        self.alt_km = alt_km
         # Use wgs84 for better compatibility with modern skyfield features if needed,
         # but Topos is fine for look angles.
         self.location = wgs84.latlon(lat_deg, lon_deg, elevation_m=alt_km * 1000)

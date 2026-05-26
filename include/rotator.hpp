@@ -1,3 +1,9 @@
+// rotator.hpp - Antenna rotator control via Hamlib.
+//
+// Thin RAII wrapper around a Hamlib rotctld connection that points an az/el
+// antenna rotator at the tracked satellite. Compiled only when ENABLE_HAMLIB is
+// defined; otherwise the methods are no-ops/stubs so the rest of the build is
+// unaffected. setPosition() commands the rotator to an azimuth/elevation.
 #pragma once
 
 #include <string>

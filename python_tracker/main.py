@@ -1,3 +1,12 @@
+"""Entry point for the Python satellite tracker.
+
+Parses the command line (mirroring the C++ flags, including the --hpop
+High-Precision Orbit Propagator options), loads TLEs (live Celestrak or
+historical Space-Track), builds the Observer and Satellite objects - optionally
+with the HPOP backend - and runs the real-time loop that propagates every
+satellite, classifies visibility, and feeds the terminal display and the web,
+text, and physics servers. Functional twin of the C++ src/main.cpp.
+"""
 import argparse
 import time
 import datetime
@@ -19,6 +28,7 @@ from tle_manager import TLEManager
 from satellite import Satellite
 from observer import Observer
 from config_manager import ConfigManager
+import hpop
 import web_server
 import text_server
 import physics_server
@@ -84,8 +94,24 @@ Configuration is loaded from config.yaml by default.""",
     parser.add_argument("--deltaT", type=float, default=cm.get('delta_t', 1.0), dest='delta_t', help="Time increment between calculations (0.001-60 seconds, default 1)")
     parser.add_argument("--satsel", type=str, default=cm.get('sat_selection', ""), help="Comma-separated satellite names (overrides --groupsel)")
     parser.add_argument("--time", type=str, default=None, help='Simulate time: "YYYY-MM-DD HH:MM:SS" (UTC). Times more than 24h from real-now fetch historical TLEs from Space-Track.')
+    parser.add_argument("--hpop", action='store_true', help="Use the High-Precision Orbit Propagator (EGM96 gravity + Sun/Moon + drag + SRP) instead of SGP4.")
+    parser.add_argument("--hpop-degree", type=int, default=20, dest='hpop_degree', help="HPOP geopotential degree/order (1-20, default 20)")
+    parser.add_argument("--no-drag", action='store_true', help="HPOP: disable atmospheric drag")
+    parser.add_argument("--no-srp", action='store_true', help="HPOP: disable solar radiation pressure")
+    parser.add_argument("--no-thirdbody", action='store_true', help="HPOP: disable Sun/Moon third-body perturbations")
 
     args = parser.parse_args()
+
+    # Build HPOP options (None disables the backend; satellites then use Skyfield/SGP4).
+    hpop_opts = None
+    if args.hpop:
+        if not hpop.available():
+            print("[ERROR] --hpop requested but the ve_hpop module is unavailable.\n"
+                  + hpop.import_hint(), file=sys.stderr)
+            sys.exit(2)
+        deg = max(1, min(20, args.hpop_degree))
+        hpop_opts = dict(degree=deg, drag=not args.no_drag, srp=not args.no_srp,
+                         thirdbody=not args.no_thirdbody)
 
     # Parse --time into an aware UTC datetime (or None for real-time).
     sim_time_utc = None
@@ -141,8 +167,13 @@ Configuration is loaded from config.yaml by default.""",
         print("Error: Could not load any TLE data. Check your network connection, group names, or Space-Track credentials.", file=sys.stderr)
         sys.exit(1)
 
-    satellites = [Satellite(tle) for tle in tles]
+    satellites = [Satellite(tle, hpop_opts=hpop_opts) for tle in tles]
     print(f"Successfully loaded {len(satellites)} satellites.")
+    if hpop_opts is not None:
+        n_hpop = sum(1 for s in satellites if s.hpop is not None)
+        print(f"[HPOP] High-precision propagator active for {n_hpop} satellites "
+              f"(geopotential {hpop_opts['degree']}x{hpop_opts['degree']}, "
+              f"drag={hpop_opts['drag']}, srp={hpop_opts['srp']}, 3-body={hpop_opts['thirdbody']}).")
 
     # Thread Pool for Math
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)

@@ -1,3 +1,16 @@
+// main.cpp - Program entry point and real-time tracking loop.
+//
+// Responsibilities:
+//   * Parse the command line and merge it over config.yaml into an AppConfig
+//     (including the --hpop High-Precision Orbit Propagator switches).
+//   * Load TLEs (live Celestrak or historical Space-Track) via TLEManager and,
+//     when --hpop is set, attach the numerical propagator to each real satellite.
+//   * Run the compute loop: a thread pool propagates every satellite each tick,
+//     computes look angles / visibility / next events, filters and sorts the
+//     results, and feeds the ncurses Display plus the web, text, and physics
+//     servers. Optionally drives Hamlib radio/rotator control for a single target.
+//   * Maintain two clocks: a "display" (face-value) clock and the UTC "physics"
+//     clock used for all propagation, so simulated times render intuitively.
 #include <iostream>
 #include <vector>
 #include <thread>
@@ -40,6 +53,13 @@ void print_help() {
               << "  --time <str>      Simulate UTC time (e.g. \"2019-06-15 12:00:00\"). Past\n"
               << "                    dates >24h ago fetch historical TLEs from Space-Track.\n"
               << "  --deltaT <sec>    Time increment between calculations (0.001-60, default 1)\n"
+              << "  --hpop            High-Precision Orbit Propagator: numerically integrate\n"
+              << "                    a full force model (EGM96 gravity + Sun/Moon + drag + SRP)\n"
+              << "                    instead of SGP4. Seeded from the TLE state vector at epoch.\n"
+              << "  --hpop-degree <N> HPOP geopotential degree/order (1-20, default 20)\n"
+              << "  --no-drag         HPOP: disable atmospheric drag\n"
+              << "  --no-srp          HPOP: disable solar radiation pressure\n"
+              << "  --no-thirdbody    HPOP: disable Sun/Moon third-body perturbations\n"
               << "  --radio <bool>    Enable radio control (true/false, requires --satsel)\n"
               << "  --rotator <bool>  Enable rotator control (true/false, requires --satsel)\n"
               << "  --groupbuild      Enter Mission Planner builder mode\n"
@@ -240,6 +260,23 @@ int main(int argc, char* argv[]) {
         }
         else if (arg == "--no-visible") { config.visible_only = false; }
 
+        // HIGH-PRECISION ORBIT PROPAGATOR FLAGS
+        else if (arg == "--hpop") { config.high_precision = true; }
+        else if (arg == "--hpop-degree") {
+            if (i+1 < argc) {
+                int d = std::stoi(argv[++i]);
+                if (d < 1 || d > 20) {
+                    std::cerr << "[WARN] --hpop-degree must be 1-20. Using 20." << std::endl;
+                    config.hpop_degree = 20;
+                } else {
+                    config.hpop_degree = d;
+                }
+            }
+        }
+        else if (arg == "--no-drag")      { config.hpop_drag = false; }
+        else if (arg == "--no-srp")       { config.hpop_srp = false; }
+        else if (arg == "--no-thirdbody") { config.hpop_thirdbody = false; }
+
         // HARDWARE CONTROL FLAGS (Requires Argument)
         else if (arg == "--radio") {
             if (i+1 < argc) {
@@ -379,6 +416,29 @@ int main(int argc, char* argv[]) {
             return 1; 
         }
         Logger::log("Loaded " + std::to_string(sats.size()) + " satellites");
+
+        // Enable the High-Precision Orbit Propagator on real satellites (skip the
+        // synthetic Sun/Moon objects, which carry negative NORAD ids).
+        if (config.high_precision) {
+            ForceParams fp;
+            fp.grav_degree = config.hpop_degree;
+            fp.grav_order  = config.hpop_degree;
+            fp.use_sun = fp.use_moon = config.hpop_thirdbody;
+            fp.use_drag = config.hpop_drag;
+            fp.use_srp  = config.hpop_srp;
+            int enabled = 0;
+            for (auto& sat : sats) {
+                if (sat.getNoradId() <= 0) continue; // skip SUN/MOON synthetics
+                sat.enableHighPrecision(fp);
+                if (sat.isHighPrecision()) ++enabled;
+            }
+            std::cout << "[HPOP] High-precision propagator enabled for " << enabled
+                      << " satellites (geopotential " << config.hpop_degree << "x" << config.hpop_degree
+                      << ", drag=" << (config.hpop_drag ? "on" : "off")
+                      << ", srp=" << (config.hpop_srp ? "on" : "off")
+                      << ", 3-body=" << (config.hpop_thirdbody ? "on" : "off") << ")." << std::endl;
+            Logger::log("HPOP enabled for " + std::to_string(enabled) + " satellites");
+        }
 
         WebServer web_server(port_web, tle_mgr, false);
         TextServer text_server(port_text);

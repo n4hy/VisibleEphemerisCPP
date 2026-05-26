@@ -1,3 +1,8 @@
+// text_server.cpp - HTTP text-mirror server implementation.
+// Binds the listen socket in the constructor (fail-fast on a busy port). The
+// server loop accepts one connection at a time, drains the request, wraps the
+// latest cached terminal frame in a tiny auto-refreshing HTML page, sends it
+// with an explicit Content-Length, and closes. POSIX sockets; no dependencies.
 #include "text_server.hpp"
 #include "logger.hpp"
 #include <iostream>

@@ -13,3 +13,8 @@ fastapi==0.136.3
 uvicorn==0.48.0
 PyYAML==6.0.3
 numpy==2.4.6
+
+# Build-time only: required to compile the optional ve_hpop module that powers
+# the --hpop (High-Precision Orbit Propagator) backend. Not needed for the
+# default Skyfield/SGP4 path. Build:  cmake .. -DBUILD_PYTHON_BINDINGS=ON
+pybind11==2.13.6

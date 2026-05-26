@@ -1,3 +1,10 @@
+// web_server.cpp - HTTP dashboard / Mission Planner server implementation.
+// A single-threaded server loop parses minimal HTTP requests and routes them:
+// the dashboard serves the static UI plus a JSON snapshot of the current
+// satellite table (buildJson), while builder/Mission Planner mode adds catalog
+// search and group-building endpoints that stage an AppConfig for the main
+// program to adopt. Also tracks the operator-selected NORAD id for hardware
+// control. POSIX sockets; query parsing/URL-decoding helpers included.
 #include "web_server.hpp"
 #include "logger.hpp"
 #include <iostream>

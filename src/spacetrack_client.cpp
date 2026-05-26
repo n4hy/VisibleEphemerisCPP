@@ -1,3 +1,10 @@
+// spacetrack_client.cpp - Space-Track.org historical TLE retrieval.
+// Resolves credentials (env vars, then ~/.config/visible-ephemeris/spacetrack.ini),
+// authenticates against the Space-Track REST API with libcurl (cookie-based
+// login), and queries the gp_history endpoint for the element set nearest to -
+// but not after - the requested date for each NORAD id. Results are written as
+// a 3LE file for TLEManager to parse. The anonymous-namespace helpers handle
+// libcurl write callbacks, string trimming, ISO-8601 dates, and the ini path.
 #include "spacetrack_client.hpp"
 #include "logger.hpp"
 

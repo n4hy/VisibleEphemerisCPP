@@ -1,3 +1,9 @@
+// thread_pool.hpp - Fixed-size worker thread pool (header-only).
+//
+// A classic condition-variable work queue: enqueue() hands a callable to the
+// next idle worker; the destructor drains and joins all workers. Used to fan
+// out per-satellite propagation/pass work across CPU cores. Defaults to
+// std::thread::hardware_concurrency() workers.
 #pragma once
 #include <vector>
 #include <queue>

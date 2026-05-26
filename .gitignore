@@ -9,3 +9,5 @@ config.yaml
 ve_log.txt
 
 venv/
+__pycache__/
+*.pyc
