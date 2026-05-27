@@ -111,6 +111,21 @@ if(BUILD_TESTS)
 endif()
 
 # ----------------------------------------------------------------------------
+# Optional examples:  cmake .. -DBUILD_EXAMPLES=ON  &&  cmake --build . --target compare_iss
+# ----------------------------------------------------------------------------
+option(BUILD_EXAMPLES "Build example programs" OFF)
+if(BUILD_EXAMPLES)
+    add_executable(compare_iss
+        examples/compare_iss.cpp
+        src/ephemeris.cpp
+        src/force_model.cpp
+        src/numerical_propagator.cpp
+        src/logger.cpp)
+    target_include_directories(compare_iss PRIVATE include ${SGP4_INCLUDE_DIR})
+    target_link_libraries(compare_iss PRIVATE ${SGP4_LIB})
+endif()
+
+# ----------------------------------------------------------------------------
 # Optional: pybind11 module exposing the High-Precision Orbit Propagator.
 #   cmake .. -DBUILD_PYTHON_BINDINGS=ON
 # Produces an importable `ve_hpop` Python extension. pybind11 is located via

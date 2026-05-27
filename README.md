@@ -267,6 +267,24 @@ print(p.epoch_jd, p.cd_area_over_m, p.drag_enabled)
 #                 atmosphere_density(alt_km), gmst_rad(jd)
 ```
 
+### Example: HPOP vs SGP4 over a day
+
+`examples/compare_iss.cpp` propagates the ISS for a full day with both HPOP and
+SGP4 and prints the position difference decomposed into the orbital RSW frame
+(radial / along-track / cross-track):
+
+```bash
+cd build
+cmake .. -DBUILD_EXAMPLES=ON && cmake --build . --target compare_iss
+LD_LIBRARY_PATH=~/sgp4/build/install/lib ./compare_iss
+```
+
+The separation is essentially all along-track (the orbits stay on the same plane
+and shape but drift in phase), growing to ~10 km after 24 h - the expected
+signature of a full numerical force model diverging from SGP4's analytic theory.
+This is a model-difference demonstration, not an accuracy verdict: HPOP is seeded
+from SGP4's mean elements at epoch, so neither result is ground truth.
+
 ---
 
 ## Historical Tracking (Past Dates)
