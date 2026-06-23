@@ -7,32 +7,34 @@
 // flat reflector and tests how close its specular reflection points at the
 // observer, for Iridium-style glints on sunlit low-Earth-orbit satellites.
 #include "visibility.hpp"
+#include "earth_rotation.hpp"
 #include <cmath>
 #include <iostream>
 
 namespace ve {
     Vector3 VisibilityCalculator::getSunPositionECI(const TimePoint& t) {
-        double n = toJulianDate(t) - 2451545.0; 
+        double n = toJulianDate(t) - 2451545.0;
         double L = std::fmod(280.460 + 0.9856474 * n, 360.0); if (L<0) L+=360;
         double g = std::fmod(357.528 + 0.9856003 * n, 360.0); if (g<0) g+=360;
         double lam = (L + 1.915 * std::sin(g*DEG2RAD) + 0.020 * std::sin(2*g*DEG2RAD)) * DEG2RAD;
         double eps = (23.439 - 0.0000004 * n) * DEG2RAD;
-        double R = 149597870.7; 
+        double R = 149597870.7;
         return {R*std::cos(lam), R*std::cos(eps)*std::sin(lam), R*std::sin(eps)*std::sin(lam)};
     }
 
     Geodetic VisibilityCalculator::getSunPositionGeo(const TimePoint& t) {
+        // Rotate the Sun's ECI position into ECEF through the pluggable
+        // rotation interface.  The default rotator (``defaultRotation``)
+        // is the legacy GMST-only z-rotation -- behaviourally identical
+        // to the original two-line code that lived here.  Swap to
+        // ``ve::iauRotation()`` to pick up the TEME-aware GAST rotation
+        // (GMST + equation of equinoxes); see include/earth_rotation.hpp.
         Vector3 sun_eci = getSunPositionECI(t);
-        double gmst = getGMST(t);
-        
-        // Convert ECI to ECF (Rotate by -GMST)
-        double x_ecf = sun_eci.x * std::cos(gmst) + sun_eci.y * std::sin(gmst);
-        double y_ecf = -sun_eci.x * std::sin(gmst) + sun_eci.y * std::cos(gmst);
-        double z_ecf = sun_eci.z;
+        Vector3 sun_ecf = defaultRotation().rotate_eci_to_ecef(sun_eci, t);
 
-        double lon = std::atan2(y_ecf, x_ecf) * RAD2DEG;
-        double hyp = std::sqrt(x_ecf*x_ecf + y_ecf*y_ecf);
-        double lat = std::atan2(z_ecf, hyp) * RAD2DEG;
+        double lon = std::atan2(sun_ecf.y, sun_ecf.x) * RAD2DEG;
+        double hyp = std::sqrt(sun_ecf.x*sun_ecf.x + sun_ecf.y*sun_ecf.y);
+        double lat = std::atan2(sun_ecf.z, hyp) * RAD2DEG;
 
         return {lat, lon, 0.0};
     }

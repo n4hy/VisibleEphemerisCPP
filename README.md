@@ -20,6 +20,18 @@ Both **C++** and **Python** implementations are provided with identical function
 * **Stability**: Implements "Pre-calculate All" logic at startup to ensure 24-hour pass predictions are instantly available, eliminating "Calculating..." flicker and UI jitter.
 * **Decoupled Clock**: Simulation time input is treated as "Face Value" (Local Wall-Clock Time) for display, while strictly adhering to UTC for orbital physics, eliminating timezone confusion.
 * **Historical Playback**: Run the tracker at any past UTC date. For dates >24 h in the past, TLEs valid on that date are pulled from Space-Track.org's `gp_history` archive, cached permanently, and propagated exactly as the live tracker does. Full Iridium-NEXT constellation coverage from its 2017–2019 launches. See [Historical Tracking](#historical-tracking-past-dates).
+* **Pluggable Earth-Rotation Model** (`include/earth_rotation.hpp`): a `Rotation3` /
+  `IEarthRotation` interface lets the visibility and display code rotate
+  ECI → ECEF through either the legacy **`GmstRotation`** (GMST-only z-rotation,
+  the default, equivalent to the original two-line code) or the
+  **`IAU2000Rotation`** which uses GAST = GMST + Equation of the Equinoxes
+  (IAU 1980 nutation). Since SGP4 outputs are in TEME (not GCRS), the
+  IAU2000 rotation is the correct reduction for SGP4 → ITRS and removes
+  the ~1.3 arc-second equation-of-equinoxes bias from sub-satellite
+  points and similar geometry. The Python tracker already inherits the
+  full IAU 2006/2000A chain implicitly through Skyfield's `.at(t)` /
+  `wgs84.subpoint()` calls in `python_tracker/satellite.py` and
+  `observer.py`.
 
 ### Display Systems
 * **NCurses Terminal Dashboard** (C++):
