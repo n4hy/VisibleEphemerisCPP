@@ -39,7 +39,7 @@ namespace ve {
         // High-Precision Orbit Propagator (HPOP) settings. When enabled, the
         // numerical force-model integrator replaces SGP4 for state propagation.
         bool high_precision = false;     // --hpop
-        int  hpop_degree = 20;           // geopotential degree/order (<= 20)
+        int  hpop_degree = 10;           // geopotential degree/order (<= 20); 10 is sub-100 m/day for LEO
         bool hpop_drag = true;           // --no-drag to disable
         bool hpop_srp = true;            // --no-srp to disable
         bool hpop_thirdbody = true;      // --no-thirdbody to disable Sun/Moon

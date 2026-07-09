@@ -121,9 +121,10 @@ namespace ve {
         err_norm = std::sqrt(s2 / 6.0);
     }
 
-    void NumericalPropagator::integrateTo(double t_target) {
-        if (!valid_) return;
-        // Start from whichever cached checkpoint is closer to the target.
+    std::pair<Vector3, Vector3> NumericalPropagator::integrateTo(double t_target) {
+        if (!valid_) return {{0, 0, 0}, {0, 0, 0}};
+        // Start from whichever natural-boundary anchor (epoch or cached checkpoint)
+        // is closer to the target.
         double t;
         Vector3 r, v;
         if (std::fabs(t_target - t_cur_) <= std::fabs(t_target)) {
@@ -135,11 +136,16 @@ namespace ve {
         const double dir = (t_target >= t) ? 1.0 : -1.0;
         double natural_h = std::max(h_hint_, ip_.min_step_sec); // unclamped adaptive magnitude
         int guard = 0;
-        while (dir * (t_target - t) > 1e-9) {
+        // March on NATURAL adaptive steps, but never step past the target: stop
+        // once the target lies within the next full step. The step size is thus
+        // driven by the error controller alone, never by the query spacing.
+        while (true) {
             double rem = dir * (t_target - t);
-            double hmag = std::min(natural_h, rem);
-            double h = dir * hmag;
+            if (rem <= 1e-9) break;                          // already at target
+            double hmag = std::min(natural_h, ip_.max_step_sec);
+            if (hmag >= rem) break;                          // target within one step
 
+            double h = dir * hmag;
             Vector3 r_new, v_new;
             double err;
             rkStep(t, h, r, v, r_new, v_new, err);
@@ -160,21 +166,32 @@ namespace ve {
                 break;
             }
         }
+        // Persist the checkpoint on its natural-step boundary (not the target).
         t_cur_ = t; r_cur_ = r; v_cur_ = v;
+
+        // One exact partial step of size <= natural_h lands precisely on the
+        // target. It retains the integrator's full 8th-order accuracy and, being
+        // outside the accept/reject loop, leaves h_hint_ (the natural cadence)
+        // untouched -- so the returned state is the same whether the caller jumps
+        // straight here or marches in fine increments.
+        double rem = dir * (t_target - t);
+        if (rem <= 1e-9) return {r, v};
+        Vector3 r_ans, v_ans;
+        double err;
+        rkStep(t, dir * rem, r, v, r_ans, v_ans, err);
+        return {r_ans, v_ans};
     }
 
     std::pair<Vector3, Vector3> NumericalPropagator::stateAtSeconds(double t_sec) {
         std::lock_guard<std::mutex> lock(mtx_);
         if (!valid_) return {{0, 0, 0}, {0, 0, 0}};
-        integrateTo(t_sec);
-        return {r_cur_, v_cur_};
+        return integrateTo(t_sec);
     }
 
     std::pair<Vector3, Vector3> NumericalPropagator::propagate(const TimePoint& t) {
         std::lock_guard<std::mutex> lock(mtx_);
         if (!valid_) return {{0, 0, 0}, {0, 0, 0}};
         double t_sec = (julianFromTimePoint(t) - jd_epoch_) * 86400.0;
-        integrateTo(t_sec);
-        return {r_cur_, v_cur_};
+        return integrateTo(t_sec);
     }
 }

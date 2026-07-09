@@ -44,14 +44,17 @@ namespace ve {
     private:
         void rkStep(double t, double h, const Vector3& r, const Vector3& v,
                     Vector3& r_out, Vector3& v_out, double& err_norm) const;
-        void integrateTo(double t_target_sec); // assumes mtx_ held
+        // Returns the state at exactly t_target_sec. Advances the cached
+        // checkpoint only on natural adaptive-step boundaries, so results are
+        // independent of the query cadence. Assumes mtx_ held.
+        std::pair<Vector3, Vector3> integrateTo(double t_target_sec);
 
         ForceModel force_;
         IntegratorParams ip_;
         double jd_epoch_ = 0.0;
         Vector3 r0_{0, 0, 0}, v0_{0, 0, 0};   // anchor state at epoch
-        double t_cur_ = 0.0;                   // seconds since epoch of cached state
-        Vector3 r_cur_{0, 0, 0}, v_cur_{0, 0, 0};
+        double t_cur_ = 0.0;                   // seconds since epoch of cached checkpoint
+        Vector3 r_cur_{0, 0, 0}, v_cur_{0, 0, 0}; // checkpoint, always on a natural step boundary
         double h_hint_ = 60.0;                 // adaptive step carried between calls
         bool valid_ = false;
         mutable std::mutex mtx_;

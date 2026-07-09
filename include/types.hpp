@@ -42,7 +42,7 @@ namespace ve {
     constexpr double DEG2RAD = PI / 180.0;
     constexpr double RAD2DEG = 180.0 / PI;
     constexpr double SECONDS_PER_DAY = 86400.0;
-    constexpr double EARTH_MU = 398600.4418;  // Gravitational parameter (km^3/s^2)
+    constexpr double EARTH_MU = 398600.4415;  // Earth GM (km^3/s^2); == egm96::GM_KM3_S2, single GM used repo-wide
     constexpr double DECAY_ALTITUDE_KM = 80.0;  // Satellites below this apogee are considered decayed
 
     inline double toJulianDate(const TimePoint& t) {

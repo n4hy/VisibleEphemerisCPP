@@ -3,7 +3,7 @@
 // resulting module is `ve_hpop`.
 //
 //   import ve_hpop
-//   p = ve_hpop.Propagator(name, line1, line2, degree=20)
+//   p = ve_hpop.Propagator(name, line1, line2, degree=10)
 //   r, v = p.propagate_jd(jd)            # ECI (TEME) km, km/s
 //   lat, lon, alt = p.geodetic_jd(jd)    # WGS84 degrees, km
 #include <pybind11/pybind11.h>
@@ -123,13 +123,13 @@ PYBIND11_MODULE(ve_hpop, m) {
                       int, int, bool, bool, bool, double, double, double,
                       double, double, double, double>(),
              py::arg("name"), py::arg("line1"), py::arg("line2"),
-             py::arg("degree") = 20, py::arg("order") = -1,
+             py::arg("degree") = 10, py::arg("order") = -1,
              py::arg("drag") = true, py::arg("srp") = true, py::arg("thirdbody") = true,
              py::arg("mass_kg") = 0.0, py::arg("drag_area_m2") = 0.0, py::arg("srp_area_m2") = 0.0,
              py::arg("Cd") = 2.2, py::arg("Cr") = 1.3,
              py::arg("rtol") = 0.0, py::arg("atol") = 0.0,
-             "Construct from a TLE. Geopotential degree/order default to 20; spacecraft\n"
-             "mass/area are optional (the TLE B* term seeds the drag/SRP area-to-mass).")
+             "Construct from a TLE. Geopotential degree/order default to 10 (up to 20);\n"
+             "spacecraft mass/area are optional (the TLE B* term seeds the drag/SRP area-to-mass).")
         .def("propagate_jd", &PyPropagator::propagate_jd, py::arg("jd"),
              "Propagate to a UTC Julian Date; returns (position_km[3], velocity_km_s[3]) in ECI/TEME.")
         .def("propagate_unix", &PyPropagator::propagate_unix, py::arg("unix_seconds"),

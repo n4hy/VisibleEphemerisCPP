@@ -16,8 +16,11 @@
 namespace ve {
 
     struct ForceParams {
-        int grav_degree = 20;     // geopotential max degree (<= egm96::MAX_DEGREE)
-        int grav_order  = 20;     // geopotential max order  (<= grav_degree)
+        // Default 10x10: for LEO tracking this is sub-100 m/day vs a full 20x20
+        // field, far below the TEME-frame and SGP4-seed error, at ~half the cost.
+        // Raise toward egm96::MAX_DEGREE (20) for geodesy-grade work.
+        int grav_degree = 10;     // geopotential max degree (<= egm96::MAX_DEGREE)
+        int grav_order  = 10;     // geopotential max order  (<= grav_degree)
         bool use_sun  = true;
         bool use_moon = true;
         bool use_drag = true;
@@ -54,7 +57,7 @@ namespace ve {
         Vector3 gravityAccel(double jd, const Vector3& r_eci) const;
         Vector3 thirdBodyAccel(const Vector3& r_eci, const Vector3& r_body, double gm) const;
         Vector3 dragAccel(const Vector3& r_eci, const Vector3& v_eci) const;
-        Vector3 srpAccel(double jd, const Vector3& r_eci) const;
+        Vector3 srpAccel(const Vector3& r_eci, const Vector3& r_sun) const;
 
         ForceParams p_;
         int nmax_;

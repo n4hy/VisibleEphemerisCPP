@@ -186,8 +186,7 @@ namespace ve {
         return a_ms * 1e-3;                                    // km/s^2
     }
 
-    Vector3 ForceModel::srpAccel(double jd, const Vector3& r) const {
-        Vector3 r_sun = sunPositionECI(jd);
+    Vector3 ForceModel::srpAccel(const Vector3& r, const Vector3& r_sun) const {
         // Cylindrical Earth-shadow test (penumbra neglected).
         Vector3 s_hat = r_sun.normalize();
         double r_par = r.dot(s_hat);
@@ -205,10 +204,13 @@ namespace ve {
 
     Vector3 ForceModel::acceleration(double jd, const Vector3& r, const Vector3& v) const {
         Vector3 a = gravityAccel(jd, r);
-        if (p_.use_sun)  a = a + thirdBodyAccel(r, sunPositionECI(jd), GM_SUN);
+        // Sun position feeds both the third-body term and SRP; evaluate it once.
+        bool need_sun = p_.use_sun || p_.use_srp;
+        Vector3 r_sun = need_sun ? sunPositionECI(jd) : Vector3{0, 0, 0};
+        if (p_.use_sun)  a = a + thirdBodyAccel(r, r_sun, GM_SUN);
         if (p_.use_moon) a = a + thirdBodyAccel(r, moonPositionECI(jd), GM_MOON);
         if (drag_enabled_) a = a + dragAccel(r, v);
-        if (p_.use_srp)  a = a + srpAccel(jd, r);
+        if (p_.use_srp)  a = a + srpAccel(r, r_sun);
         return a;
     }
 }

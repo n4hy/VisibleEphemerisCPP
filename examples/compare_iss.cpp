@@ -1,7 +1,7 @@
 // compare_iss.cpp - Example: HPOP vs SGP4 for the ISS over a full day.
 //
 // Propagates the same TLE with both the High-Precision Orbit Propagator
-// (EGM96 20x20 gravity + Sun/Moon third-body + atmospheric drag + solar
+// (EGM96 10x10 gravity + Sun/Moon third-body + atmospheric drag + solar
 // radiation pressure, adaptive Fehlberg RK7(8)) and analytic SGP4, then prints
 // the position difference. Because both propagators emit TEME, the states are
 // differenced directly (no frame conversion) and decomposed into the orbital
@@ -34,10 +34,11 @@ int main() {
     libsgp4::SGP4 sgp4(tle);
 
     ForceParams fp;
-    fp.bstar = tle.BStar();   // full model: EGM96 20x20 + Sun/Moon + drag + SRP
+    fp.bstar = tle.BStar();   // full model: EGM96 (default 10x10) + Sun/Moon + drag + SRP
     NumericalPropagator hpop(tle, fp);
 
-    printf("ISS HPOP (EGM96 20x20 + Sun/Moon + drag + SRP, RKF7(8)) vs SGP4\n");
+    printf("ISS HPOP (EGM96 %dx%d + Sun/Moon + drag + SRP, RKF7(8)) vs SGP4\n",
+           fp.grav_degree, fp.grav_order);
     printf("TLE epoch JD %.5f. Both in TEME; differences in km.\n\n", tle.Epoch().ToJulian());
     printf("%6s | %9s | %9s %9s %9s | %8s\n",
            "min", "|dr| km", "radial", "along", "cross", "|dalt|");
