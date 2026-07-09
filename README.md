@@ -13,7 +13,7 @@ Both **C++** and **Python** implementations are provided with identical function
 
 ### Tracking Engine
 * **SGP4/SDP4 Propagation**: Uses `libsgp4` (C++) or `Skyfield` (Python) for high-precision orbital math.
-* **High-Precision Orbit Propagator (HPOP)**: Optional `--hpop` mode that numerically integrates a full force model — EGM96 gravity (degree/order 20), Sun/Moon third-body, atmospheric drag, and solar radiation pressure — with an adaptive Fehlberg RK7(8) integrator, seeded from the TLE state vector at epoch. Available in both C++ and Python (via the `ve_hpop` pybind11 module). See [High-Precision Orbit Propagator](#high-precision-orbit-propagator-hpop).
+* **High-Precision Orbit Propagator (HPOP)**: Optional `--hpop` mode that numerically integrates a full force model — EGM96 gravity (degree/order 10 by default, up to 20), Sun/Moon third-body, atmospheric drag, and solar radiation pressure — with an adaptive Fehlberg RK7(8) integrator, seeded from the TLE state vector at epoch. Available in both C++ and Python (via the `ve_hpop` pybind11 module). See [High-Precision Orbit Propagator](#high-precision-orbit-propagator-hpop).
 * **Massive Scale**: Tracks the entire NORAD Active Catalog (13,000+ objects) simultaneously.
 * **Smart Caching**: Automatic TLE downloading and caching from Celestrak with 24-hour auto-refresh cycle. Historical TLEs (`tle_cache/historical/YYYY-MM-DD/`) are cached permanently since archived elements never change.
 * **Multi-Group Selection**: Track specific combinations (e.g., `amateur,weather,stations`) using the `group_selection` config or `--groupsel` argument.
@@ -168,6 +168,7 @@ Both C++ and Python accept the same flag names unless noted.
 
 | Argument | Description | Default |
 |:---------|:------------|:--------|
+| `--help`, `-h` | Print the full option list and network-port summary, then exit | - |
 | `--lat <deg>` | Observer Latitude (Decimal Degrees) | from config |
 | `--lon <deg>` | Observer Longitude (Decimal Degrees) | from config |
 | `--alt <km>` | Observer Altitude (km) | from config |
@@ -185,7 +186,7 @@ Both C++ and Python accept the same flag names unless noted.
 | `--time <str>` | Simulate time in UTC (`"YYYY-MM-DD HH:MM:SS"`). Past dates >24 h ago trigger historical TLE retrieval from Space-Track — see [Historical Tracking](#historical-tracking-past-dates) | Real-time |
 | `--deltaT <sec>` | Update interval in seconds (0.001-60) | 1.0 |
 | `--hpop` | Use the High-Precision Orbit Propagator instead of SGP4 (see [below](#high-precision-orbit-propagator-hpop)) | off |
-| `--hpop-degree <N>` | HPOP geopotential degree/order (1-20) | 20 |
+| `--hpop-degree <N>` | HPOP geopotential degree/order (1-20). 10 is sub-100 m/day for LEO at ~half the cost of 20; raise for geodesy-grade work | 10 |
 | `--no-drag` | HPOP: disable atmospheric drag | drag on |
 | `--no-srp` | HPOP: disable solar radiation pressure | srp on |
 | `--no-thirdbody` | HPOP: disable Sun/Moon third-body perturbations | on |
@@ -215,14 +216,18 @@ visibility) is unchanged.
 
 | Perturbation | Model |
 |:--|:--|
-| Earth gravity | **EGM96** spherical harmonics to degree/order 20 (Cunningham/Pines recursion), evaluated Earth-fixed via GMST. Coefficients embedded in the binary. |
+| Earth gravity | **EGM96** spherical harmonics (Cunningham/Pines recursion), evaluated Earth-fixed via GMST. Default degree/order 10, selectable up to 20 via `--hpop-degree`. Coefficients embedded in the binary. |
 | Third body | Sun and Moon point-mass (Montenbruck-Gill analytic ephemerides) |
 | Atmospheric drag | Piecewise-exponential density (Vallado); co-rotating atmosphere. Ballistic coefficient `Cd·A/m = 2·B*/0.15696615` derived from the TLE B* term |
 | Solar radiation pressure | `4.56e-6 N/m²` at 1 AU, cylindrical Earth-shadow; `Cr·A/m` shared from the drag area |
 
 Integration uses an **adaptive Fehlberg RK7(8)** scheme (8th-order solution,
-embedded 7th-order error control). Verification: HPOP at epoch reproduces the
-SGP4 seed exactly; two-body semi-major axis is conserved to < 1 mm over a day.
+embedded 7th-order error control). Because the integrator marches on its own
+adaptive step boundaries and lands on each requested epoch with a single exact
+partial step, results are independent of how finely you sample — a direct jump
+and a fine-grained march to the same time agree to machine precision.
+Verification: HPOP at epoch reproduces the SGP4 seed exactly; two-body
+semi-major axis is conserved to ~1 cm over a day.
 
 > HPOP is heavier than SGP4. It is best for a focused set of satellites
 > (`--satsel`) rather than the full 13,000-object catalog.
@@ -233,8 +238,8 @@ SGP4 seed exactly; two-body semi-major axis is conserved to < 1 mm over a day.
 # C++ — track the ISS with the full high-precision model
 LD_LIBRARY_PATH=~/sgp4/build/install/lib ./VisibleEphemeris --satsel ISS --hpop
 
-# Geopotential to degree 10, gravity + Sun/Moon only (no drag/SRP)
-./VisibleEphemeris --satsel ISS --hpop --hpop-degree 10 --no-drag --no-srp
+# Full 20x20 geopotential, gravity + Sun/Moon only (no drag/SRP)
+./VisibleEphemeris --satsel ISS --hpop --hpop-degree 20 --no-drag --no-srp
 
 # Python tracker
 python3 main.py --satsel ISS --hpop
@@ -257,7 +262,7 @@ build directory to `PYTHONPATH`. Usage:
 
 ```python
 import ve_hpop
-p = ve_hpop.Propagator(name, line1, line2, degree=20,
+p = ve_hpop.Propagator(name, line1, line2, degree=10,
                        drag=True, srp=True, thirdbody=True)  # optional mass_kg/area/Cd/Cr
 r, v = p.propagate_jd(jd)             # ECI/TEME position (km) & velocity (km/s)
 r, v = p.propagate(datetime_utc)      # also accepts a Python datetime
@@ -456,13 +461,40 @@ TLEs are cached permanently under `tle_cache/historical/YYYY-MM-DD/`; re-running
 
 ---
 
+## Planning Tools
+
+Two optional utilities help you assemble a tracking selection before launching
+the tracker. Both write to the same `config.yaml` the tracker reads.
+
+### Mission Planner (`--groupbuild`, C++)
+```bash
+./VisibleEphemeris --groupbuild
+```
+Instead of starting the tracker, this launches a browser-based **Mission Planner
+UI** on the web dashboard port (default 8080; override with `--port`). Open
+`http://<IP>:8080` to browse the catalog and build a group. This mode runs
+blocking and does not start the ncurses display or the text/physics servers.
+
+### Orbital Architect (`orbital_architect.py`, standalone)
+```bash
+python3 orbital_architect.py
+```
+An interactive ANSI-terminal tool that loads the on-disk TLE cache
+(`tle_cache/`) into a searchable catalog, lets you browse/search and pick
+satellites, and writes the chosen selection plus observer settings to
+`config.yaml`. It is a standalone helper, not part of the tracker's runtime
+path — run it first, then start the tracker normally.
+
+---
+
 ## Keyboard Controls
 
 | Key | Action |
 |:----|:-------|
-| **Q** | Quit (prompts to save configuration) |
+| **Q** | Quit — opens the "Save configuration?" prompt |
+| **Y / N / ESC** | At the quit prompt: **Y** save & quit, **N** quit without saving, **ESC** cancel and resume |
 | **UP/DOWN** | Scroll satellite list |
-| **PAGE UP/DOWN** | Fast scroll |
+| **PAGE UP/DOWN** | Fast scroll (±10 rows) |
 
 ---
 
@@ -501,18 +533,24 @@ telnet localhost 12346
 socat - TCP:localhost:12346
 ```
 
-**Example Output:**
+**Example Output** (fixed-width columns; rows sorted by elevation, descending):
 ```
 VISIBLE EPHEMERIS v12.65-CODE-ONLY
 2026-02-23 12:34:56.7 LOC
-OBS: 39.6478, -76.1347 | SHOWN: 5
+OBS: 39.6478, -76.1347 | SHOWN: 2
 
-NAME            AZ       EL      RANGE RR(km/s) VIS   NEXT EVENT
--------------------------------------------------------------------------
-IRIDIUM 140       83.3     29.2     1271.8    0.092 DAY   LOS 6m 42s
-IRIDIUM 110      243.1     14.2     1899.9    3.752 DAY   AOS 3m 54s
+NAME                  AZ       EL      RANGE RR(km/s) VIS   NEXT EVENT      NORAD        LAT        LON     APOGEE  FLARE
+----------------------------------------------------------------------------------------------------------------------
+IRIDIUM 140         83.3     29.2     1271.8    0.092 DAY   LOS 6m 42s      43074    41.2317   -72.9841      780.1      0
+IRIDIUM 110        243.1     14.2     1899.9    3.752 DAY   AOS 3m 54s      43013    58.4402   -88.1201      779.6      0
 ---END_FRAME---
 ```
+
+Columns: `NAME`, azimuth `AZ` (deg), elevation `EL` (deg), `RANGE` (km),
+range-rate `RR(km/s)`, visibility `VIS` (VIS/DAY/ECL/HOR), `NEXT EVENT`
+(AOS/LOS countdown), `NORAD` catalog number, sub-satellite `LAT`/`LON` (deg),
+`APOGEE` (km), and `FLARE` (0 = none, >0 = specular flare). The text mirror
+(port 12345) carries the same frame wrapped in HTML.
 
 **Integration Notes:**
 * Connect via TCP to receive continuous updates

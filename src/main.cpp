@@ -56,7 +56,7 @@ void print_help() {
               << "  --hpop            High-Precision Orbit Propagator: numerically integrate\n"
               << "                    a full force model (EGM96 gravity + Sun/Moon + drag + SRP)\n"
               << "                    instead of SGP4. Seeded from the TLE state vector at epoch.\n"
-              << "  --hpop-degree <N> HPOP geopotential degree/order (1-20, default 20)\n"
+              << "  --hpop-degree <N> HPOP geopotential degree/order (1-20, default 10)\n"
               << "  --no-drag         HPOP: disable atmospheric drag\n"
               << "  --no-srp          HPOP: disable solar radiation pressure\n"
               << "  --no-thirdbody    HPOP: disable Sun/Moon third-body perturbations\n"
@@ -68,7 +68,7 @@ void print_help() {
               << "\nNetwork Ports (defaults):\n"
               << "  Port 8080         Web Dashboard / Mission Planner UI (HTTP)\n"
               << "  Port 12345        Terminal Mirror Server (HTTP text display)\n"
-              << "  Port 12346        Physics Stream Server (TCP, JSON satellite data)\n"
+              << "  Port 12346        Physics Stream Server (TCP, fixed-width text frames)\n"
               << "\nConfiguration is loaded from config.yaml by default.\n";
 }
 
