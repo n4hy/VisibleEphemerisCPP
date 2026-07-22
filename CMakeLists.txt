@@ -108,6 +108,10 @@ if(BUILD_TESTS)
     target_include_directories(test_hpop PRIVATE include ${SGP4_INCLUDE_DIR})
     target_link_libraries(test_hpop PRIVATE ${SGP4_LIB})
     add_test(NAME hpop COMMAND test_hpop)
+
+    add_executable(test_earth_rotation unittests/test_earth_rotation.cpp)
+    target_include_directories(test_earth_rotation PRIVATE include)
+    add_test(NAME earth_rotation COMMAND test_earth_rotation)
 endif()
 
 # ----------------------------------------------------------------------------
