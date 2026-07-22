@@ -11,3 +11,6 @@ ve_log.txt
 venv/
 __pycache__/
 *.pyc
+
+# Skyfield / JPL planetary ephemeris kernels (auto-downloaded, ~17 MB)
+*.bsp
