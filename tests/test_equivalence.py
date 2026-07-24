@@ -198,18 +198,39 @@ int main(int argc, char* argv[]) {
     build_dir = os.path.join(project_root, 'build')
     bin_path = os.path.join(test_dir, 'test_equiv')
 
-    # Find SGP4
-    sgp4_root = os.path.expanduser('~/sgp4/build/install')
-    sgp4_inc = os.path.join(sgp4_root, 'include', 'libsgp4')
-    sgp4_lib = os.path.join(sgp4_root, 'lib')
+    # Find SGP4 — mirror the CMake search order:
+    # $HOME/sgp4/build/install → /usr/local → /usr. First hit wins.
+    sgp4_inc = None
+    sgp4_lib = None
+    for root in (os.path.expanduser('~/sgp4/build/install'), '/usr/local', '/usr'):
+        inc_candidate = os.path.join(root, 'include', 'libsgp4')
+        for lib_sub in ('lib', 'lib64'):
+            lib_candidate = os.path.join(root, lib_sub)
+            if (os.path.isfile(os.path.join(inc_candidate, 'Tle.h')) and
+                (os.path.isfile(os.path.join(lib_candidate, 'libsgp4s.so')) or
+                 os.path.isfile(os.path.join(lib_candidate, 'libsgp4s.a')))):
+                sgp4_inc = inc_candidate
+                sgp4_lib = lib_candidate
+                break
+        if sgp4_inc:
+            break
+    if not sgp4_inc:
+        print("COMPILE ERROR: libsgp4 (Tle.h + libsgp4s) not found in "
+              "~/sgp4/build/install, /usr/local, or /usr.")
+        return None
 
-    # Source files needed (minimal set for computation)
+    # Source files needed (minimal set for computation). satellite.cpp
+    # now links against the HPOP numerical propagator, which pulls in
+    # force_model, numerical_propagator, and ephemeris.
     src_files = [
         src_path,
         os.path.join(src_dir, 'satellite.cpp'),
         os.path.join(src_dir, 'observer.cpp'),
         os.path.join(src_dir, 'visibility.cpp'),
         os.path.join(src_dir, 'logger.cpp'),
+        os.path.join(src_dir, 'numerical_propagator.cpp'),
+        os.path.join(src_dir, 'force_model.cpp'),
+        os.path.join(src_dir, 'ephemeris.cpp'),
     ]
 
     # Pick a C++ compiler: $CXX, else clang++ (project reference), else g++.
@@ -244,10 +265,9 @@ def run_cpp_test(bin_path, lat, lon, alt_km, time_str, tle):
         tle['line1'], tle['line2'], tle['name']
     ]
 
-    env = os.environ.copy()
-    env['LD_LIBRARY_PATH'] = os.path.expanduser('~/sgp4/build/install/lib') + ':' + env.get('LD_LIBRARY_PATH', '')
-
-    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    # The compile step baked the libsgp4 directory into the binary via
+    # -Wl,-rpath so no LD_LIBRARY_PATH override is needed here.
+    result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"C++ ERROR: {result.stderr}")
         return None

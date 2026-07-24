@@ -626,9 +626,14 @@ A comprehensive equivalence test verifies that the Python (Skyfield) and C++ (li
 
 **Running the test:**
 ```bash
-# From project root
-python_tracker/.venv/bin/python tests/test_equivalence.py
+# From project root — use whichever venv has skyfield/sgp4/numpy installed.
+# The repo-root venv (created by `python3 -m venv venv && pip install -r
+# python_tracker/requirements.txt`) works out of the box:
+venv/bin/python tests/test_equivalence.py
 ```
+The harness auto-discovers `libsgp4` via the same search order as CMake
+(`~/sgp4/build/install` → `/usr/local` → `/usr`) and rebuilds the C++ test
+tool on every run.
 
 **What it tests:**
 | Metric | Tolerance | Typical Difference |

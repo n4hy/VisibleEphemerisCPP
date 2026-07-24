@@ -95,7 +95,7 @@ Configuration is loaded from config.yaml by default.""",
     parser.add_argument("--satsel", type=str, default=cm.get('sat_selection', ""), help="Comma-separated satellite names (overrides --groupsel)")
     parser.add_argument("--time", type=str, default=None, help='Simulate time: "YYYY-MM-DD HH:MM:SS" (UTC). Times more than 24h from real-now fetch historical TLEs from Space-Track.')
     parser.add_argument("--hpop", action='store_true', help="Use the High-Precision Orbit Propagator (EGM96 gravity + Sun/Moon + drag + SRP) instead of SGP4.")
-    parser.add_argument("--hpop-degree", type=int, default=20, dest='hpop_degree', help="HPOP geopotential degree/order (1-20, default 20)")
+    parser.add_argument("--hpop-degree", type=int, default=10, dest='hpop_degree', help="HPOP geopotential degree/order (1-20, default 10)")
     parser.add_argument("--no-drag", action='store_true', help="HPOP: disable atmospheric drag")
     parser.add_argument("--no-srp", action='store_true', help="HPOP: disable solar radiation pressure")
     parser.add_argument("--no-thirdbody", action='store_true', help="HPOP: disable Sun/Moon third-body perturbations")
