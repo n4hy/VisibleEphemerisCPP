@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      SGP4_PREFIX: ${{ github.workspace }}/sgp4-install
+      SGP4_REPO_SHA: d176906dbfaf8361eee1f83bd1dc1bacc6582798  # pin dnwrnr/sgp4 (2025-11-03)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install apt dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake clang \
+            libncurses-dev libcurl4-openssl-dev pkg-config \
+            python3-venv wget ca-certificates
+
+      - name: Cache libsgp4 build
+        id: cache-sgp4
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SGP4_PREFIX }}
+          key: sgp4-${{ runner.os }}-${{ env.SGP4_REPO_SHA }}-v1
+
+      - name: Build & install libsgp4
+        if: steps.cache-sgp4.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/dnwrnr/sgp4.git /tmp/sgp4
+          cd /tmp/sgp4
+          git checkout "$SGP4_REPO_SHA"
+          mkdir build && cd build
+          cmake -DCMAKE_INSTALL_PREFIX="$SGP4_PREFIX" -DCMAKE_BUILD_TYPE=Release ..
+          make -j"$(nproc)"
+          make install
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('python_tracker/requirements.txt') }}
+
+      - name: Create venv & install Python dependencies
+        run: |
+          python3 -m venv venv
+          ./venv/bin/pip install --upgrade pip
+          ./venv/bin/pip install -r python_tracker/requirements.txt
+
+      - name: Cache JPL DE421 ephemeris
+        id: cache-de421
+        uses: actions/cache@v4
+        with:
+          path: de421.bsp
+          key: de421-jpl-v1
+
+      - name: Download DE421 (if not cached)
+        if: steps.cache-de421.outputs.cache-hit != 'true'
+        run: |
+          # Skyfield resolves 'de421.bsp' from the current working directory.
+          # Fetch from NAIF (JPL); Skyfield's own default source is the same file.
+          wget -q --tries=3 -O de421.bsp \
+            https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/a_old_versions/de421.bsp
+
+      - name: Configure CMake
+        run: |
+          # sgp4 headers live under $SGP4_PREFIX/include/libsgp4 — CMakeLists.txt
+          # already searches $HOME/sgp4/build/install, /usr/local, /usr, so add
+          # $SGP4_PREFIX to the search chain via CMAKE_PREFIX_PATH + a symlink
+          # into $HOME/sgp4/build/install (matches the existing search list).
+          mkdir -p "$HOME/sgp4/build"
+          ln -sfn "$SGP4_PREFIX" "$HOME/sgp4/build/install"
+
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_HAMLIB=OFF \
+            -DBUILD_TESTS=ON \
+            -DBUILD_EXAMPLES=ON \
+            -DBUILD_PYTHON_BINDINGS=ON
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: ctest (hpop + earth_rotation)
+        working-directory: build
+        run: ctest --output-on-failure
+
+      - name: Flare unit test
+        run: |
+          clang++ -std=c++17 -Iinclude \
+            unittests/test_flare.cpp src/visibility.cpp \
+            -o /tmp/test_flare
+          /tmp/test_flare
+
+      - name: HPOP-vs-SGP4 24-hour ISS benchmark (compare_iss)
+        run: build/compare_iss | tee compare_iss.log
+      - name: Assert compare_iss finished
+        run: |
+          grep -q "Over 24 h" compare_iss.log
+
+      - name: ve_hpop pybind sanity
+        run: |
+          ./venv/bin/python - <<'PY'
+          import sys; sys.path.insert(0, 'build')
+          import ve_hpop
+          tle = ('ISS',
+                 '1 25544U 98067A   25342.18171806  .00023618  00000+0  41560-3 0  9999',
+                 '2 25544  51.6390 196.0228 0006517 314.6498 142.3419 15.50266153487131')
+          p = ve_hpop.Propagator(*tle)
+          r, v = p.propagate_jd(p.epoch_jd)
+          rmag = sum(x*x for x in r) ** 0.5
+          vmag = sum(x*x for x in v) ** 0.5
+          print(f"ve_hpop OK: |r|={rmag:.3f} km, |v|={vmag:.3f} km/s")
+          assert 6000 < rmag < 8000, f"|r| out of range: {rmag}"
+          assert 7 < vmag < 9,       f"|v| out of range: {vmag}"
+          PY
+
+      - name: Python/C++ equivalence test
+        run: ./venv/bin/python tests/test_equivalence.py
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs
+          path: |
+            compare_iss.log
+            build/CMakeFiles/CMakeOutput.log
+            build/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
