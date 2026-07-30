@@ -1,0 +1,9 @@
+visible-ephemeris (1.0.0-1) unstable; urgency=medium
+
+  * Initial release of the Debian package.
+  * Ships python_tracker + three PyQt6 dashboards:
+    ve-ide, ve-orbital-architect-qt, ve-hpop-panel.
+  * Installs launchers to /usr/bin and desktop entries to
+    /usr/share/applications.
+
+ -- Bob McGwier N4HY <rwmcgwier@gmail.com>  Sat, 25 Jul 2026 00:00:00 +0000

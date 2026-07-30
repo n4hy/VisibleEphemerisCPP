@@ -1,0 +1,50 @@
+#!/usr/bin/make -f
+# debian/rules for visible-ephemeris — an arch:all Python + Qt package.
+#
+# The build is a straight file copy: no compilation, no wheels, no venv.
+# We simply lay out /usr/lib/visible-ephemeris/, /usr/bin, and
+# /usr/share/applications the way an end-user install expects.
+
+DESTDIR := $(CURDIR)/debian/visible-ephemeris
+PYROOT  := $(DESTDIR)/usr/lib/visible-ephemeris
+BINDIR  := $(DESTDIR)/usr/bin
+APPSDIR := $(DESTDIR)/usr/share/applications
+DOCDIR  := $(DESTDIR)/usr/share/doc/visible-ephemeris
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# Nothing to build for arch:all — pure Python.
+
+override_dh_auto_install:
+	install -d $(PYROOT) $(BINDIR) $(APPSDIR) $(DOCDIR)
+
+	# Python tree
+	cp -a python_tracker $(PYROOT)/
+	find $(PYROOT) -type d -name '__pycache__' -exec rm -rf {} +
+	find $(PYROOT) -type f -name '*.pyc' -delete
+
+	# Launchers — generated fresh so they hard-code /usr/lib as VE_PY_ROOT.
+	@set -e; for pair in \
+	    ve-ide:python_tracker.qt_dashboards.ve_ide \
+	    ve-orbital-architect-qt:python_tracker.qt_dashboards.orbital_architect_qt \
+	    ve-hpop-panel:python_tracker.qt_dashboards.hpop_panel \
+	    ve-tracker:python_tracker.main ; do \
+	    name=$${pair%%:*}; mod=$${pair##*:}; \
+	    printf '#!/bin/sh\nexport VE_PY_ROOT="/usr/lib/visible-ephemeris"\nPY="$${VE_PYTHON:-python3}"\nexport PYTHONPATH="$$VE_PY_ROOT$${PYTHONPATH:+:$$PYTHONPATH}"\nexec "$$PY" -m %s "$$@"\n' "$$mod" > $(BINDIR)/$$name; \
+	    chmod 0755 $(BINDIR)/$$name; \
+	done
+
+	# Desktop entries
+	install -m 0644 packaging/desktop/ve-ide.desktop                  $(APPSDIR)/
+	install -m 0644 packaging/desktop/ve-orbital-architect-qt.desktop $(APPSDIR)/
+	install -m 0644 packaging/desktop/ve-hpop-panel.desktop           $(APPSDIR)/
+
+	# Docs
+	install -m 0644 README.md                       $(DOCDIR)/
+	install -m 0644 docs/dashboards.md              $(DOCDIR)/
+	install -m 0644 docs/installation.md            $(DOCDIR)/
+
+override_dh_auto_clean:
+	rm -rf $(DESTDIR)

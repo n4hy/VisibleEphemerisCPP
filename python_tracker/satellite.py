@@ -11,7 +11,10 @@ from skyfield.api import load, EarthSatellite, wgs84
 import datetime
 import math
 import numpy as np
-import hpop  # High-Precision Orbit Propagator backend (wraps ve_hpop)
+try:
+    from . import hpop  # High-Precision Orbit Propagator backend (wraps ve_hpop)
+except ImportError:
+    import hpop
 
 # Singleton timescale instance to avoid repeated loads
 _timescale = None

@@ -1,0 +1,33 @@
+Source: visible-ephemeris
+Section: science
+Priority: optional
+Maintainer: Bob McGwier N4HY <rwmcgwier@gmail.com>
+Build-Depends: debhelper-compat (= 13), python3 (>= 3.10)
+Standards-Version: 4.6.2
+Homepage: https://github.com/n4hy/VisibleEphemerisCPP
+
+Package: visible-ephemeris
+Architecture: all
+Depends: ${misc:Depends},
+         python3 (>= 3.10),
+         python3-pyqt6,
+         python3-pyqt6.qtsvg,
+         python3-pyqtgraph,
+         python3-matplotlib,
+         python3-numpy,
+         python3-yaml,
+         python3-requests
+Recommends: python3-skyfield,
+            python3-fastapi,
+            python3-uvicorn
+Description: Visible Ephemeris — satellite tracker with Qt dashboards
+ Visible Ephemeris tracks Earth-orbiting satellites in real time (SGP4 or
+ High-Precision Orbit Propagator), classifies optical visibility, predicts
+ passes, and serves telemetry via a web dashboard, HTTP text mirror, and TCP
+ physics stream. This package ships the Python tracker plus three PyQt6
+ dashboards:
+  * ve-ide                  VS Code-style IDE panel for the project
+  * ve-orbital-architect-qt Satellite fleet selection GUI
+  * ve-hpop-panel           Real-time physics-stream diagnostic panel
+ The CLI tracker (ve-tracker) is also installed. All dashboards are launched
+ from the applications menu or by name from a shell.

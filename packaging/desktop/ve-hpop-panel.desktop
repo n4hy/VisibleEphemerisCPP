@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=HPOP Diagnostic Panel
+GenericName=Physics Stream Monitor
+Comment=Real-time HPOP/physics-stream diagnostic dashboard for Visible Ephemeris
+Exec=ve-hpop-panel
+Icon=applications-science
+Terminal=false
+Categories=Science;Astronomy;
+Keywords=satellite;hpop;physics;diagnostic;
+StartupNotify=true
+StartupWMClass=ve-hpop-panel

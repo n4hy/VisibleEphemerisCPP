@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Visible Ephemeris IDE
+GenericName=Satellite Tracking IDE
+Comment=VS Code-style Qt IDE for Visible Ephemeris (satellite tracker development)
+Exec=ve-ide %F
+Icon=applications-development
+Terminal=false
+Categories=Development;IDE;Science;
+Keywords=satellite;tracker;ephemeris;qt;ide;
+StartupNotify=true
+StartupWMClass=ve-ide

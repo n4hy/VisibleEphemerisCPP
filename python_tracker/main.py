@@ -24,14 +24,28 @@ if sys.platform != 'win32':
 else:
     HAS_TERMIOS = False
 
-from tle_manager import TLEManager
-from satellite import Satellite
-from observer import Observer
-from config_manager import ConfigManager
-import hpop
-import web_server
-import text_server
-import physics_server
+# Support two invocation styles:
+#   * `python3 main.py`               (cwd = python_tracker/, flat imports)
+#   * `python3 -m python_tracker.main` (cwd = repo root, package imports —
+#                                       this is what the launchers and ve-ide use)
+try:
+    from .tle_manager import TLEManager
+    from .satellite import Satellite
+    from .observer import Observer
+    from .config_manager import ConfigManager
+    from . import hpop
+    from . import web_server
+    from . import text_server
+    from . import physics_server
+except ImportError:
+    from tle_manager import TLEManager
+    from satellite import Satellite
+    from observer import Observer
+    from config_manager import ConfigManager
+    import hpop
+    import web_server
+    import text_server
+    import physics_server
 
 def clear_screen():
     """Clears the console screen."""
@@ -41,19 +55,36 @@ def clear_screen():
         subprocess.run(['clear'], check=False)
 
 class KeyPoller:
+    """Non-blocking single-key reader.
+
+    Degrades to a silent no-op when stdin is not a real terminal (e.g. when
+    launched from ve-ide via QProcess, a systemd unit, or piped input). This
+    keeps the tracker usable in headless / GUI-launched contexts — the user
+    just can't press 'q'; they stop the process the way it was started.
+    """
+    def __init__(self):
+        self._active = False
+
     def __enter__(self):
-        if HAS_TERMIOS:
-            self.old_settings = termios.tcgetattr(sys.stdin)
-            tty.setcbreak(sys.stdin.fileno())
+        if HAS_TERMIOS and sys.stdin.isatty():
+            try:
+                self.old_settings = termios.tcgetattr(sys.stdin)
+                tty.setcbreak(sys.stdin.fileno())
+                self._active = True
+            except (termios.error, OSError):
+                self._active = False
         return self
 
     def __exit__(self, type, value, traceback):
-        if HAS_TERMIOS:
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_settings)
+        if self._active:
+            try:
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_settings)
+            except (termios.error, OSError):
+                pass
 
     def poll(self):
-        if not HAS_TERMIOS:
-            return None  # Windows: no non-blocking stdin support via termios
+        if not self._active:
+            return None
         if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
             return sys.stdin.read(1)
         return None
@@ -408,6 +439,14 @@ Configuration is loaded from config.yaml by default.""",
 
         # --- Shutdown / Save Prompt ---
         print("\nStopping tracker...")
+        if not sys.stdin.isatty():
+            # No terminal (e.g. launched from ve-ide via QProcess): skip the
+            # prompt — leave the on-disk config untouched.
+            print("(non-interactive stdin — skipping save prompt)")
+            if txt_server: txt_server.stop()
+            if phys_server: phys_server.stop()
+            executor.shutdown(wait=True)
+            return
         while True:
             response = input("Save configuration to config.yaml? (y/n): ").strip().lower()
             if response in ['y', 'yes']:

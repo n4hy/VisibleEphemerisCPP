@@ -48,6 +48,19 @@ Both **C++** and **Python** implementations are provided with identical function
 * **Web Terminal Mirror (Port 12345)**:
     * Ultra-lightweight HTML mirror of the terminal output.
     * Uses HTTP/1.0 "Fire-and-Forget" protocol to prevent browser hanging on slow connections.
+* **Qt 6 Desktop Dashboards** (PyQt6 ≥ 6.4, VS Code Dark+ palette):
+    * **`ve-ide`** — VS Code-style IDE for the project. Activity bar, file
+      tree, tabbed editor with Python/C++/YAML syntax highlighting, embedded
+      terminal, quick-open (`Ctrl+P`), command palette (`Ctrl+Shift+P`),
+      one-click Run buttons for the tracker / CMake / ctest, and a live
+      Satellites tab that streams the tracker's physics feed inline.
+    * **`ve-orbital-architect-qt`** — Ergonomic satellite fleet picker.
+      Live-filter catalog, checkbox multi-select, station config, and Deploy
+      button that writes `tle_cache/<group>.txt` + `config.yaml` in one shot.
+    * **`ve-hpop-panel`** — Real-time HPOP / physics-stream monitor.
+      Auto-reconnecting TCP client on `:12346`, sortable fleet table, and
+      pyqtgraph strip charts of elevation / range / range-rate / visible-count
+      for the selected satellite. See [Dashboards guide](docs/dashboards.md).
 
 ---
 
@@ -82,6 +95,38 @@ Shows only satellites that meet the naked-eye visibility definition above (and a
 ---
 
 ## Installation
+
+### One-line install (Python tracker + Qt dashboards)
+
+From a checkout, install everything the Python tracker and Qt dashboards need
+and put four launchers on your `PATH`:
+
+```bash
+./install.sh                # user install into ~/.local (no sudo)
+./install.sh --system       # system install into /usr/local (needs sudo)
+```
+
+After it finishes:
+
+| Launcher                    | Runs                                        |
+| --------------------------- | ------------------------------------------- |
+| `ve-ide`                    | VS Code-style Qt IDE dashboard              |
+| `ve-orbital-architect-qt`   | Qt satellite fleet selector                 |
+| `ve-hpop-panel`             | Qt physics-stream monitor                   |
+| `ve-tracker`                | CLI + web + text tracker (`python_tracker.main`) |
+
+The install is idempotent; roll it back with `./install.sh --uninstall`.
+
+For sysadmin fleets, build a native Debian package instead:
+
+```bash
+sudo apt-get install -y debhelper dpkg-dev fakeroot rsync
+packaging/build_deb.sh --clean --install
+```
+
+See [`docs/installation.md`](docs/installation.md) for full details (flags,
+apt-package list, non-Debian distros, uninstall) and
+[`docs/dashboards.md`](docs/dashboards.md) for the dashboards guide.
 
 ### C++ Version (Primary)
 
@@ -126,25 +171,32 @@ The Python tracker is located in `python_tracker/` and provides identical functi
 
 **Prerequisites:**
 * Python 3.10+
-* Linux Environment (required for `termios`/`tty` interactive input support)
+* Linux (macOS/BSD work for the tracker; the terminal keyboard poller no-ops
+  on Windows and under non-TTY parents such as `ve-ide`'s Run buttons)
 
-**Installation:**
+**Installation (venv, self-contained):**
 ```bash
-cd python_tracker
-
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
+python3 -m venv venv
+./venv/bin/pip install -r python_tracker/requirements.txt
 ```
+
+That single `pip install` now pulls **everything** the tracker and the Qt
+dashboards need — PyQt6 (with bundled Qt), pyqtgraph, matplotlib, skyfield,
+fastapi, uvicorn, numpy, PyYAML, requests, pybind11.
 
 **Running:**
 ```bash
-source .venv/bin/activate  # If not already activated
-python3 main.py
+# From repo root (recommended — matches ve-ide's Run buttons)
+./venv/bin/python3 -m python_tracker.main
+./venv/bin/python3 -m python_tracker.main --hpop
+
+# From python_tracker/ (legacy)
+cd python_tracker && ../venv/bin/python3 main.py
 ```
+
+`main.py` supports both invocation styles and detects non-TTY stdin (skipping
+the interactive keyboard poller and the on-exit save prompt) so it runs cleanly
+under `ve-ide`, systemd, cron, or any other non-terminal parent.
 
 ---
 

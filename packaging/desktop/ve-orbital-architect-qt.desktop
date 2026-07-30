@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Orbital Architect
+GenericName=Satellite Fleet Selector
+Comment=Select and deploy satellite tracking fleets for Visible Ephemeris
+Exec=ve-orbital-architect-qt
+Icon=applications-science
+Terminal=false
+Categories=Science;Astronomy;
+Keywords=satellite;tle;orbital;architect;
+StartupNotify=true
+StartupWMClass=ve-orbital-architect-qt

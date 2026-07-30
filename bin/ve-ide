@@ -1,0 +1,15 @@
+#!/bin/sh
+# ve-ide -- launch the VS Code-style Qt IDE dashboard for Visible Ephemeris.
+
+set -eu
+
+if [ -n "${VE_PY_ROOT:-}" ] && [ -d "${VE_PY_ROOT}" ]; then
+    export PYTHONPATH="${VE_PY_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+else
+    _self="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+    _repo="$(cd "$(dirname "$_self")/.." && pwd)"
+    export PYTHONPATH="${_repo}${PYTHONPATH:+:${PYTHONPATH}}"
+fi
+
+PY="${VE_PYTHON:-python3}"
+exec "$PY" -m python_tracker.qt_dashboards.ve_ide "$@"
