@@ -12,6 +12,12 @@ The C++ tracker binary (`./VisibleEphemeris`) still uses the existing CMake
 build; see the top-level [`README.md`](../README.md#build). The paths below
 cover the **Python tracker and Qt dashboards** only.
 
+The **orbit-determination (OD) subsystem** (see [`orbit_determination.md`](orbit_determination.md))
+is **opt-in** at CMake configure time (`-DBUILD_OD=ON`) and adds two
+sibling-library requirements — see the dedicated section
+[Optional: OD subsystem dependencies](#optional-od-subsystem-dependencies)
+below. Nothing else in the tracker requires them.
+
 ---
 
 ## 1 · `install.sh` — the one-line installer
@@ -166,6 +172,83 @@ Expected: `ok`, four launcher paths, and a Qt version ≥ 6.4.
 | `install.sh`   | `./install.sh --uninstall` (add `--system` if used) |
 | `.deb`         | `sudo apt-get remove --purge visible-ephemeris`    |
 | Source / venv  | `rm -rf .venv/`                                    |
+
+---
+
+## Optional: OD subsystem dependencies
+
+> Skip this section unless you are building the orbit-determination (OD)
+> subsystem — `cmake .. -DBUILD_OD=ON`. Nothing in the tracker, HPOP, or the
+> Qt dashboards requires these libraries.
+>
+> **Status (v0, 2026-08-02):** The OD subsystem is implemented and builds;
+> its unit-test suite (4 executables, 10 assertions) passes on the reference
+> Ubuntu 24.04 + GCC 13 + x86_64 host. See
+> [`orbit_determination.md`](orbit_determination.md) §14 for the file:line
+> implementation index and §15 for measured behavior. Kilometre-scale RMS on
+> synthetic benchmarks is a documented precision-floor finding tied to NLF's
+> single-precision SRUKF, not a build/config issue.
+
+The OD subsystem consumes two sibling repositories checked out next to this
+one (all under `$HOME/` in the reference layout):
+
+    ~/VisibleEphemerisCPP/                          # this repo
+    ~/Modern-Computational-Nonlinear-Filtering/     # SRUKF + SRUKF smoothers
+    ~/OptimizedKernelsForRaspberryPi5_NvidiaCUDA/   # NEON/SVE2/CUDA/Vulkan BLAS
+
+Both are MIT-licensed and can be built and installed with CMake:
+
+```bash
+# 1. OptMathKernels (NEON/SVE2/cuBLAS/cuSOLVER/Vulkan dispatch layer)
+cd ~/OptimizedKernelsForRaspberryPi5_NvidiaCUDA
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+sudo cmake --install build        # installs OptMathKernels::OptMathKernels
+
+# 2. NLF (Modern-Computational-Nonlinear-Filtering)
+cd ~/Modern-Computational-Nonlinear-Filtering
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+sudo cmake --install build        # installs nlf::nlf (find_package config)
+```
+
+`Eigen3 ≥ 3.4` is required by both siblings. On Debian/Ubuntu:
+
+```bash
+sudo apt-get install -y libeigen3-dev
+```
+
+Once both are installed, this repo's `cmake` picks them up via
+`find_package(nlf REQUIRED)` and `find_package(OptMathKernels REQUIRED)`:
+
+```bash
+cd ~/VisibleEphemerisCPP
+cmake -B build_od -S . \
+    -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+    -DBUILD_OD=ON -DBUILD_TESTS=ON -DBUILD_OD_BENCHMARKS=ON
+cmake --build build_od -j
+ctest --test-dir build_od -R "^od_" --output-on-failure
+```
+
+**Why the explicit `gcc`/`g++` flags?** NLF's Config file requires OpenMP
+via `find_dependency(OpenMP)`. Ubuntu ships GCC with `libgomp` built in,
+so GCC works out of the box; the default Ubuntu Clang install does *not*
+ship libomp headers. If you prefer Clang, install `libomp-dev` first.
+
+Backend auto-selection:
+
+| Host                                          | Accelerated path chosen at run time |
+| --------------------------------------------- | ----------------------------------- |
+| Raspberry Pi 5 (Cortex-A76)                   | NEON                                |
+| Orange Pi 6+ (Cortex-A720, SVE2 / FCMA / I8MM)| SVE2                                |
+| x86 + NVIDIA GPU                              | cuBLAS + cuSOLVER (Cholesky, GEMM)  |
+| Any host with Vulkan 1.2+                     | Vulkan compute (fallback path)      |
+| Any host, no accelerator                      | Eigen (portable C++20 fallback)     |
+
+The Eigen fallback is bit-identical across hosts by design; the accelerated
+paths match Eigen output to the tolerance documented in NLF's own tests. No
+runtime configuration is required — the fastest available path is chosen at
+compile time via CMake option flags in `OptMathKernels`.
 
 ---
 

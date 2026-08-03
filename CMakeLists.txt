@@ -130,6 +130,87 @@ if(BUILD_EXAMPLES)
 endif()
 
 # ----------------------------------------------------------------------------
+# Optional: Orbit-determination (OD) subsystem -- SRUKF + RTS smoother +
+# Doppler measurement model, consuming the sibling NLF and OptMathKernels
+# libraries. See docs/orbit_determination.md for the design specification.
+#
+#   cmake .. -DBUILD_OD=ON \
+#            -Dnlf_DIR=/home/n4hy/Modern-Computational-Nonlinear-Filtering/install/lib/cmake/nlf \
+#            -DOptMathKernels_DIR=/home/n4hy/Modern-Computational-Nonlinear-Filtering/install/lib/cmake/OptMathKernels
+# ----------------------------------------------------------------------------
+option(BUILD_OD "Build the orbit-determination (OD) subsystem"       OFF)
+option(BUILD_OD_BENCHMARKS "Build the OD benchmarks (implies BUILD_OD)" OFF)
+if(BUILD_OD_BENCHMARKS AND NOT BUILD_OD)
+    set(BUILD_OD ON)
+endif()
+
+if(BUILD_OD)
+    # Default hints so a checkout-next-to-checkout dev layout Just Works.
+    if(NOT DEFINED nlf_DIR)
+        set(nlf_DIR "${USER_HOME}/Modern-Computational-Nonlinear-Filtering/install/lib/cmake/nlf"
+            CACHE PATH "Directory containing nlfConfig.cmake")
+    endif()
+    if(NOT DEFINED OptMathKernels_DIR)
+        # OptMathKernels is exported via NLF's install tree as well as via
+        # /usr/local; prefer NLF's install to avoid version skew.
+        set(OptMathKernels_DIR "${USER_HOME}/Modern-Computational-Nonlinear-Filtering/install/lib/cmake/OptMathKernels"
+            CACHE PATH "Directory containing OptMathKernelsConfig.cmake")
+    endif()
+
+    find_package(Eigen3 3.4 REQUIRED)
+    find_package(OptMathKernels REQUIRED)
+    find_package(nlf REQUIRED)
+
+    add_library(ve_od STATIC
+        src/od/od_types.cpp
+        src/od/od_dynamics.cpp
+        src/od/tle_to_state.cpp
+        src/od/doppler_measurement.cpp
+        src/od/od_smoother.cpp
+        src/force_model.cpp
+        src/ephemeris.cpp
+        src/logger.cpp)
+    target_include_directories(ve_od PUBLIC
+        ${CMAKE_SOURCE_DIR}/include
+        ${SGP4_INCLUDE_DIR})
+    target_link_libraries(ve_od PUBLIC
+        Eigen3::Eigen
+        nlf::nlf
+        OptMathKernels::OptMathKernels
+        ${SGP4_LIB})
+    # Force C++20 for ve_od because NLF uses <numbers> and other C++20 constructs.
+    target_compile_features(ve_od PUBLIC cxx_std_20)
+
+    # Unit tests
+    if(BUILD_TESTS)
+        add_executable(test_od_frames unittests/test_od_frames.cpp)
+        target_link_libraries(test_od_frames PRIVATE ve_od)
+        add_test(NAME od_frames COMMAND test_od_frames)
+
+        add_executable(test_od_doppler unittests/test_od_doppler.cpp)
+        target_link_libraries(test_od_doppler PRIVATE ve_od)
+        add_test(NAME od_doppler COMMAND test_od_doppler)
+
+        add_executable(test_od_srukf_linear unittests/test_od_srukf_linear.cpp)
+        target_link_libraries(test_od_srukf_linear PRIVATE ve_od)
+        add_test(NAME od_srukf_linear COMMAND test_od_srukf_linear)
+
+        add_executable(test_od_propagator unittests/test_od_propagator.cpp)
+        target_link_libraries(test_od_propagator PRIVATE ve_od)
+        add_test(NAME od_propagator COMMAND test_od_propagator)
+    endif()
+
+    # Benchmarks (opt-in separately -- can be slow).
+    if(BUILD_OD_BENCHMARKS)
+        add_executable(bench_synthetic     benchmarks/bench_synthetic.cpp)
+        target_link_libraries(bench_synthetic PRIVATE ve_od)
+
+        add_executable(bench_iss_pass      benchmarks/bench_iss_pass.cpp)
+        target_link_libraries(bench_iss_pass PRIVATE ve_od)
+    endif()
+endif()
+
+# ----------------------------------------------------------------------------
 # Optional: pybind11 module exposing the High-Precision Orbit Propagator.
 #   cmake .. -DBUILD_PYTHON_BINDINGS=ON
 # Produces an importable `ve_hpop` Python extension. pybind11 is located via

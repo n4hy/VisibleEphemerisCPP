@@ -356,6 +356,136 @@ from SGP4's mean elements at epoch, so neither result is ground truth.
 
 ---
 
+## Orbit Determination via Nonlinear Filtering & Smoothing
+
+> **Status marker (v0, 2026-08-02).** The design specification, the
+> implementation, and a measured-behavior report are all in
+> **[`docs/orbit_determination.md`](docs/orbit_determination.md)**. Under
+> NEWTON ARCHITECT rules the design doc tags every section with its epistemic
+> status (`[SPEC]` = design, `[IMPL]` = code exists at a specific file:line,
+> `[MEASURED]` = numerical result from a specific run). See §14 (implementation
+> index) and §15 (measured behavior) in that doc for what actually works and
+> what its numerical limits are on this build host.
+>
+> The subsystem builds, links, runs end-to-end, and passes its unit test
+> suite. Kilometre-scale RMS on the synthetic benchmarks (§15.2) is a real
+> finding traced to NLF's single-precision SRUKF interacting with 6778-km
+> state vectors, not a bug in the OD driver code. NLF's own reentry-vehicle
+> SRUKF benchmark passes its regression gate cleanly (§15.3).
+
+Beyond pure **prediction** (SGP4 or HPOP forward), Visible Ephemeris is being
+extended with a compact orbit-determination (OD) subsystem that **corrects** a
+state estimate against real observations. The initial data source is
+**Doppler-only** from a known ground station (lat, lon, alt); additional
+measurement types are future work.
+
+### What it does
+
+1. Reads a TLE and produces an initial state in the propagator's frame —
+   **TEME throughout** (matching the existing `ForceModel` /
+   `NumericalPropagator`; no GCRF conversion at any stage — see
+   [Frame and unit discipline](docs/orbit_determination.md#3-frame-and-unit-discipline)
+   and the [TLE → State design decision](docs/orbit_determination.md#6-tle--state-at-filter-epoch)).
+2. Propagates that state under the full HPOP force model to the pass's first
+   **AOS** (acquisition of signal).
+3. Between AOS and **LOS** (loss of signal), fuses each Doppler observation
+   into the state estimate with a **Square-Root Unscented Kalman Filter
+   (SRUKF)** consumed from the sibling library
+   [`Modern-Computational-Nonlinear-Filtering`](https://github.com/…) (NLF).
+4. Optionally runs a **Rauch–Tung–Striebel (RTS) smoother in square-root form**
+   backward from LOS to AOS, producing improved per-epoch state and
+   covariance for the whole pass.
+5. Optionally repeats **filter → smoother → filter → smoother …** until a
+   documented convergence criterion is met (`Δℓ < 1e-4` in log-likelihood
+   **and** `Δx < 1e-6` in Mahalanobis norm, hard-capped at 20 iterations).
+
+### Four operating modes
+
+| Mode | Name                                    | Use when |
+| ---- | --------------------------------------- | -------- |
+| **A** | Forward SRUKF only                     | You want the classical filter posterior at LOS. |
+| **B** | Forward SRUKF + full-interval RTS      | You want the best per-epoch reconstruction of the whole pass. |
+| **C** | Forward AOS→LOS, smoother LOS→AOS      | You want the smoothed state at AOS as a corrected prior for the next pass. |
+| **D** | Iterated filter–smoother               | Weak initial prior or strong non-linearity — iterate to a fixed point. |
+
+### State vector (v0)
+
+Eight states: three-component position, three-component velocity (both in
+the propagator's ECI frame, km and km/s), plus a two-component ground-station
+oscillator model (bias `b_c` in Hz and drift `b_dot` in Hz/s). The oscillator
+augmentation is required because a station-clock bias is **algebraically
+indistinguishable from radial-velocity bias** under single-station
+Doppler-only observability, and would alias into an orbit-velocity error
+otherwise.
+
+### Measurement model
+
+**One-way downlink**, **special-relativistic Doppler**:
+
+```
+f_R / f_T = √(1 − β²) / (1 − β·ρ̂)             (Rindler, Relativity §3.7)
+
+where  β = (v_sat − v_station) / c
+       ρ̂ = (r_sat − r_station) / ‖r_sat − r_station‖
+       c  = 299 792.458 km/s
+```
+
+At LEO the SR correction is O(β²) ≈ 7·10⁻¹⁰ — about 1 Hz at 1.6 GHz Iridium
+downlink. It is included, not dropped: the point of a rigorous filter is to be
+honest about what it observes. Troposphere/ionosphere are **not** modelled in
+v0; their contribution is folded into `R` inflation and the estimated
+oscillator bias, and this limitation is declared, not hidden.
+
+### Consumed libraries
+
+| Sibling repo                                            | Provides                                                             |
+| ------------------------------------------------------- | -------------------------------------------------------------------- |
+| `Modern-Computational-Nonlinear-Filtering`              | `UKFCore::SRUKF`, `SRUKFSmoother`, `SRUKFFixedLagSmoother`           |
+| `OptimizedKernelsForRaspberryPi5_NvidiaCUDA`            | NEON / SVE2 / cuBLAS / cuSOLVER / Vulkan-dispatched linear algebra   |
+
+Both are linked via `find_package(nlf REQUIRED)` and
+`find_package(OptMathKernels REQUIRED)`. `Eigen3 ≥ 3.4` becomes a required
+dependency once OD is built.
+
+### Verification and benchmarks (planned)
+
+- **Ten unit tests** covering frame round-trips, station kinematics, Doppler
+  Jacobian vs finite-difference, relativistic reduction to classical form,
+  SRUKF sigma-point invariance, RTS smoother against a closed-form linear-
+  Gaussian problem, iterated-loop convergence, propagator round-trip, TLE
+  frame documentation, and a **coordinate-frame guardrail** that deliberately
+  fails on ECEF-passed-as-ECI.
+- **Four benchmarks**: (B1) perfect-model synthetic self-consistency;
+  (B2) model-mismatch stress with truth using more force terms than the
+  filter; (B3) real ISS pass with published TLE and, if provided, recorded
+  Doppler; (B4) cross-check against NLF's own reentry-vehicle SRUKF
+  benchmark to certify our *integration* of NLF is not the discrepancy
+  source.
+
+Every benchmark writes a CSV artifact + a plain-text report so that a
+reviewer can inspect results without re-running the code.
+
+### Newton Architect discipline
+
+Full spec is in [`docs/orbit_determination.md`](docs/orbit_determination.md).
+Every algorithmic claim there carries an epistemic tag: *derived*, *proved*,
+*computed (with tolerance)*, *empirically supported*, *cited (real source)*,
+*conjectured*, or *unresolved*. In particular:
+
+- "Unit tests pass" is **not** "algorithm proven correct."
+- "Numbers agree to 6 digits" is **not** "physics correct" — it is
+  *empirically consistent to tolerance 10⁻⁶*.
+- Prior covariances `P₀`, process noise `Q`, and R defaults are
+  **declared tuning parameters**, not derived optima; any published result
+  states the values used.
+- The TEME frame choice (matching the existing force model, no IAU-2006/2000A
+  rotation of the geopotential) is a deliberate design decision, not an
+  omission; §6 of the design doc states why. Its inherited limitation
+  (sub-arcsecond line-of-sight geometry error over a single pass) is
+  reported with every result, not hidden.
+
+---
+
 ## Historical Tracking (Past Dates)
 
 When `--time` specifies a UTC date more than 24 hours in the past, the tracker fetches the TLEs that were current on that date from **Space-Track.org** (endpoint `gp_history`), caches them under `tle_cache/historical/<YYYY-MM-DD>/`, and propagates from there. This avoids the multi-kilometer SGP4 error that would result from propagating today's elements backward years.
@@ -714,6 +844,53 @@ A standalone test of the specular-flare reflection geometry (`unittests/test_fla
 clang++ -std=c++17 -Iinclude unittests/test_flare.cpp src/visibility.cpp -o /tmp/test_flare && /tmp/test_flare
 ```
 It covers a direct nadir flare (hit), a near-miss, an off-axis miss, high-orbit rejection (non-LEO), and daylight rejection. Expected output ends with `ALL TESTS PASSED`.
+
+### Orbit-Determination Test Suite [IMPL, v0, 2026-08-02]
+
+The OD subsystem ships four unit-test targets wired into `ctest` (see
+[Orbit Determination via Nonlinear Filtering & Smoothing](#orbit-determination-via-nonlinear-filtering--smoothing)
+and [docs/orbit_determination.md](docs/orbit_determination.md) §8, §14, §15
+for the design, implementation, and measured behavior):
+
+**Unit tests (fast, ~seconds):**
+
+| Test target            | Covers |
+| ---------------------- | ------ |
+| `test_od_frames`       | T1 frame round-trip, T10 wrong-frame guardrail |
+| `test_od_doppler`      | T2 station kinematics, T3 Doppler Jacobian, T4 relativistic reduction |
+| `test_od_srukf_linear` | T5 sigma-point invariance, T6 RTS on linear-Gaussian problem, T7 iterated F–S convergence |
+| `test_od_propagator`   | T8 propagator round-trip, T9 TLE→state frame documentation |
+
+Run:
+```bash
+# One-time: build the two sibling libraries (see docs/installation.md
+# "Optional: OD subsystem dependencies") and install them.
+cd build && cmake .. \
+    -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+    -DBUILD_OD=ON -DBUILD_TESTS=ON \
+    -DBUILD_OD_BENCHMARKS=ON
+cmake --build . -j
+ctest -R "^od_" --output-on-failure    # runs the four unit-test suites
+```
+
+The `-DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++` flags are needed because
+NLF's Config file requires OpenMP and the default Clang install on Ubuntu lacks
+libomp; GCC ships with libgomp built in.
+
+**Benchmarks (slower, opt-in via `-DBUILD_OD_BENCHMARKS=ON`):**
+
+| Benchmark                     | What it checks | Status |
+| ----------------------------- | -------------- | ------ |
+| `bench_synthetic`             | B1 perfect-model self-consistency; B2 model-mismatch stress | Built; runs; see docs §15.2 for measured RMS |
+| `bench_iss_pass`              | B3 real ISS pass — TLE + observer + (optional) recorded Doppler samples | Harness only — refuses to run without real recorded Doppler input |
+| `benchmarks/run_nlf_reentry.sh` | B4 cross-check against NLF's own SRUKF reentry-vehicle benchmark | Runs the NLF-shipped binary; passes regression gate |
+
+`bench_synthetic` writes 4 pairs of files (summary + per-epoch CSV) into the
+build directory. Each summary lists the truth force model, the filter force
+model, R, Q values, the mode used, iteration count, convergence flag, log-
+likelihood, and post-fit RMS — everything a reviewer needs to interpret the
+numbers. Newton Architect rules apply: no result is reported without its
+input parameters stated alongside.
 
 ---
 
