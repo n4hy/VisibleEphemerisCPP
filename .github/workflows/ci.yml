@@ -144,3 +144,164 @@ jobs:
             build/CMakeFiles/CMakeOutput.log
             build/CMakeFiles/CMakeError.log
           if-no-files-found: ignore
+
+  # --------------------------------------------------------------------------
+  # OD subsystem job: builds VisibleEphemeris with -DBUILD_OD=ON and runs the
+  # 4 OD unit-test executables (10 assertions total) plus bench_synthetic.
+  #
+  # Requires the two sibling libraries at PINNED SHAs (Newton discipline: no
+  # floating upstream dependencies). Both are public GitHub repos owned by
+  # n4hy. If either sibling changes API, this job breaks and must be updated
+  # deliberately.
+  #
+  # Uses GCC because NLF's Config file requires find_dependency(OpenMP), and
+  # Ubuntu's default clang install lacks libomp headers. GCC 13 (ubuntu-latest)
+  # ships libgomp built in.
+  # --------------------------------------------------------------------------
+  build-and-test-od:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      SGP4_PREFIX: ${{ github.workspace }}/sgp4-install
+      NLF_PREFIX: ${{ github.workspace }}/nlf-install
+      SGP4_REPO_SHA: d176906dbfaf8361eee1f83bd1dc1bacc6582798
+      OPTMATH_REPO_SHA: 817b643782e3bc721bf44f79de1cdf621a6620c2  # n4hy/OptimizedKernelsForRaspberryPi5_NvidiaCUDA (2026-08-02)
+      NLF_REPO_SHA:     0a5edd19b9360ef3d30150fc57e1f930fd857e07  # n4hy/Modern-Computational-Nonlinear-Filtering    (2026-08-02)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install apt dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake g++ gcc \
+            libncurses-dev libcurl4-openssl-dev pkg-config \
+            libeigen3-dev libvulkan-dev \
+            ca-certificates git
+
+      - name: Cache libsgp4 build
+        id: cache-sgp4
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SGP4_PREFIX }}
+          key: sgp4-${{ runner.os }}-${{ env.SGP4_REPO_SHA }}-v1
+
+      - name: Build & install libsgp4
+        if: steps.cache-sgp4.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/dnwrnr/sgp4.git /tmp/sgp4
+          cd /tmp/sgp4
+          git checkout "$SGP4_REPO_SHA"
+          mkdir build && cd build
+          cmake -DCMAKE_INSTALL_PREFIX="$SGP4_PREFIX" -DCMAKE_BUILD_TYPE=Release ..
+          make -j"$(nproc)"
+          make install
+
+      - name: Cache NLF install (with vendored OptMath)
+        id: cache-nlf
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.NLF_PREFIX }}
+          # NLF vendors OptMathKernels via add_subdirectory, so the install
+          # tree contains BOTH libraries. Cache key depends on BOTH SHAs;
+          # a change in either invalidates the cache. Newton discipline:
+          # pinned dependencies, deliberate updates.
+          key: nlf-${{ runner.os }}-nlf-${{ env.NLF_REPO_SHA }}-optmath-${{ env.OPTMATH_REPO_SHA }}-v3
+
+      - name: Clone + build + install NLF (vendors OptMath at pinned SHA)
+        if: steps.cache-nlf.outputs.cache-hit != 'true'
+        env:
+          CC:  /usr/bin/gcc
+          CXX: /usr/bin/g++
+        run: |
+          # NLF expects OptMathKernels as a SIBLING source directory (its
+          # CMakeLists.txt does add_subdirectory(OPTMATH_DIR)). Clone both
+          # at pinned SHAs; point NLF at our OptMath clone via OPTMATH_DIR
+          # so it does NOT auto-fetch its own upstream copy at HEAD.
+          git clone https://github.com/n4hy/OptimizedKernelsForRaspberryPi5_NvidiaCUDA.git /tmp/optmath
+          ( cd /tmp/optmath && git checkout "$OPTMATH_REPO_SHA" )
+
+          git clone https://github.com/n4hy/Modern-Computational-Nonlinear-Filtering.git /tmp/nlf
+          ( cd /tmp/nlf && git checkout "$NLF_REPO_SHA" )
+
+          # Configure NLF. Arch-specific SIMD backends (NEON/SVE2 in OptMath)
+          # are auto-gated to ARM in OptMath's own CMakeLists (line 231 arch
+          # check); on x86 they are silently no-op. Vulkan stays ON because
+          # libvulkan-dev is installed. CUDA off (no GPU driver on the runner).
+          cmake -B /tmp/nlf/build -S /tmp/nlf \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$NLF_PREFIX" \
+            -DOPTMATH_DIR=/tmp/optmath \
+            -DAUTO_CLONE_DEPS=OFF \
+            -DNLF_BUILD_PYTHON_VENV=OFF
+          cmake --build /tmp/nlf/build -j"$(nproc)"
+          cmake --install /tmp/nlf/build
+
+      - name: Configure VisibleEphemeris with BUILD_OD=ON
+        env:
+          CC:  /usr/bin/gcc
+          CXX: /usr/bin/g++
+        run: |
+          # Mirror the existing job's libsgp4 symlink trick so our
+          # CMakeLists.txt's built-in search list (~/sgp4/build/install)
+          # finds the cached install.
+          mkdir -p "$HOME/sgp4/build"
+          ln -sfn "$SGP4_PREFIX" "$HOME/sgp4/build/install"
+
+          # NLF's install tree contains BOTH nlfConfig.cmake and
+          # OptMathKernelsConfig.cmake, so a single PREFIX suffices.
+          cmake -S . -B build_od \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=/usr/bin/gcc \
+            -DCMAKE_CXX_COMPILER=/usr/bin/g++ \
+            -DENABLE_HAMLIB=OFF \
+            -DBUILD_TESTS=ON \
+            -DBUILD_OD=ON \
+            -DBUILD_OD_BENCHMARKS=ON \
+            -Dnlf_DIR="$NLF_PREFIX/lib/cmake/nlf" \
+            -DOptMathKernels_DIR="$NLF_PREFIX/lib/cmake/OptMathKernels"
+
+      - name: Build ve_od + tests + benchmarks
+        run: cmake --build build_od -j"$(nproc)"
+
+      - name: ctest (OD unit-test suite)
+        working-directory: build_od
+        run: ctest --output-on-failure -R "^od_"
+
+      - name: Run bench_synthetic (smoke test)
+        working-directory: build_od
+        run: |
+          ./bench_synthetic | tee bench_synthetic.log
+          # Assert the summary table produced 4 rows (b1_modeB, b1_modeD_iter,
+          # b2_modeB, b2_modeD_iter). Fail loudly if the harness silently
+          # produced fewer -- a Newton-discipline guardrail against a benchmark
+          # that quietly skips cases.
+          rows=$(grep -c '^b[12]_mode' bench_synthetic.log || true)
+          if [ "$rows" -ne 4 ]; then
+            echo "expected 4 bench_synthetic summary rows, got $rows"
+            exit 1
+          fi
+
+      - name: bench_iss_pass harness (no data => clean exit)
+        working-directory: build_od
+        run: |
+          # Newton discipline: this harness intentionally exits cleanly with
+          # instructions when no VE_OD_ISS_DOPPLER env var is set. CI verifies
+          # that path (that it does NOT fabricate a "real" result).
+          ./bench_iss_pass
+
+      - name: Upload OD logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-od-logs
+          path: |
+            build_od/bench_synthetic.log
+            build_od/bench_synthetic_*.txt
+            build_od/bench_synthetic_*.csv
+            build_od/CMakeFiles/CMakeOutput.log
+            build_od/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
