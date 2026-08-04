@@ -205,10 +205,13 @@ namespace ve {
     Vector3 ForceModel::acceleration(double jd, const Vector3& r, const Vector3& v) const {
         Vector3 a = gravityAccel(jd, r);
         // Sun position feeds both the third-body term and SRP; evaluate it once.
+        // Use the MOD-rotated (TEME-equivalent) form so the third-body and SRP
+        // vectors live in the same frame as the state r,v being integrated.
+        // Bare sunPositionECI would return J2000 -- see ephemeris.hpp.
         bool need_sun = p_.use_sun || p_.use_srp;
-        Vector3 r_sun = need_sun ? sunPositionECI(jd) : Vector3{0, 0, 0};
+        Vector3 r_sun = need_sun ? sunPositionTEME(jd) : Vector3{0, 0, 0};
         if (p_.use_sun)  a = a + thirdBodyAccel(r, r_sun, GM_SUN);
-        if (p_.use_moon) a = a + thirdBodyAccel(r, moonPositionECI(jd), GM_MOON);
+        if (p_.use_moon) a = a + thirdBodyAccel(r, moonPositionTEME(jd), GM_MOON);
         if (drag_enabled_) a = a + dragAccel(r, v);
         if (p_.use_srp)  a = a + srpAccel(r, r_sun);
         return a;

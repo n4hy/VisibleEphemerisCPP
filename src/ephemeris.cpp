@@ -5,8 +5,14 @@
 // position vectors in the J2000 mean-equator/equinox frame, in kilometres.
 // These positions feed the third-body gravity terms and the SRP shadow test
 // in force_model.cpp; their accuracy (Sun ~arcmin, Moon ~few arcmin) is far
-// finer than those perturbations require. See ephemeris.hpp for the interface
-// and the gravitational/pressure constants.
+// finer than those perturbations require.
+//
+// A precession helper precessJ2000ToMOD (IAU-1976 / Lieske 1977) rotates
+// those J2000 vectors into the mean equator / mean equinox of date frame
+// (MOD). MOD differs from true TEME by only the equation of the equinoxes
+// (arcsec scale), which for third-body vectors is negligible; MOD is the
+// operational stand-in for TEME everywhere in this file. See ephemeris.hpp
+// for the interface and the gravitational/pressure constants.
 #include "ephemeris.hpp"
 #include <cmath>
 
@@ -91,5 +97,39 @@ namespace ve {
         return eclipticToEquatorial(r * cb * std::cos(lambda),
                                     r * cb * std::sin(lambda),
                                     r * std::sin(beta));
+    }
+
+    // IAU-1976 precession (Lieske 1977), zeta_A / z_A / theta_A in arcseconds
+    // as polynomials in T = Julian centuries from J2000. The rotation matrix
+    // taking a J2000 vector to the mean equator / mean equinox of date is
+    //     P = R_z(-z) * R_y(theta) * R_z(-zeta).
+    // See Vallado 4th ed. Eq. 3-88 or Seidelmann 3.211-2. UTC in place of TT
+    // introduces a T error of ~2.2e-8 centuries, which shifts each angle by
+    // < 5e-5 arcsecond -- entirely negligible for the third-body use case
+    // where the ephemeris accuracy floor is ~arcmin.
+    Vector3 precessJ2000ToMOD(double jd, const Vector3& v_j2000) {
+        const double T = (jd - 2451545.0) / 36525.0;
+        const double AS2RAD = PI / (180.0 * 3600.0);
+        const double zeta  = ( 2306.2181 * T + 0.30188 * T * T + 0.017998 * T * T * T) * AS2RAD;
+        const double z     = ( 2306.2181 * T + 1.09468 * T * T + 0.018203 * T * T * T) * AS2RAD;
+        const double theta = ( 2004.3109 * T - 0.42665 * T * T - 0.041833 * T * T * T) * AS2RAD;
+        const double cz = std::cos(zeta),  sz = std::sin(zeta);
+        const double ct = std::cos(theta), st = std::sin(theta);
+        const double cZ = std::cos(z),     sZ = std::sin(z);
+        // Product P = R_z(-z) * R_y(theta) * R_z(-zeta), expanded once.
+        const double m00 =  cZ * ct * cz - sZ * sz;
+        const double m01 = -cZ * ct * sz - sZ * cz;
+        const double m02 = -cZ * st;
+        const double m10 =  sZ * ct * cz + cZ * sz;
+        const double m11 = -sZ * ct * sz + cZ * cz;
+        const double m12 = -sZ * st;
+        const double m20 =  st * cz;
+        const double m21 = -st * sz;
+        const double m22 =  ct;
+        return {
+            m00 * v_j2000.x + m01 * v_j2000.y + m02 * v_j2000.z,
+            m10 * v_j2000.x + m11 * v_j2000.y + m12 * v_j2000.z,
+            m20 * v_j2000.x + m21 * v_j2000.y + m22 * v_j2000.z,
+        };
     }
 }

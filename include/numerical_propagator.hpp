@@ -12,6 +12,30 @@
 // (TEME) state vector (r0, v0). That state vector seeds an adaptive Fehlberg
 // RK7(8) integration of the full force model (see force_model.hpp). The output
 // frame matches SGP4's, so existing observer/geodetic code is unchanged.
+//
+// TEME-as-pseudo-inertial (Newton note, ACKNOWLEDGED APPROXIMATION):
+//
+// The integration is performed as if TEME were an inertial frame. In truth
+// TEME rotates (relative to GCRS/J2000) at the precession-nutation rate,
+// dominated by luni-solar precession at |omega_p| ~ 7.7e-12 rad/s. Treating
+// TEME as inertial suppresses the corresponding fictitious Coriolis and
+// centrifugal terms, which for LEO come out to
+//
+//     |2 omega_p x v|   ~ 2 * 7.7e-12 * 7.7 km/s ~ 1.2e-10 km/s^2
+//     |omega_p x omega_p x r|  ~ (7.7e-12)^2 * 7000 km  ~ 4e-19 km/s^2
+//
+// dwarfed by SRP (~1e-9 km/s^2), drag (~1e-8 km/s^2) and Sun/Moon third-body
+// (~1e-7 km/s^2). Integrated over a day it accumulates to O(10 m) position
+// error -- a real physical effect, not merely a labelling one. It is left
+// uncorrected here so the propagator, the observer look-angle code, and the
+// SGP4 fallback all agree in a single self-consistent TEME. A full remedy
+// requires TEME->GCRS state conversion at every acceleration evaluation
+// PLUS matching observer / visibility updates; that architectural change is
+// deferred and out of scope for this file.
+//
+// The J2000-vs-TEME frame issue for the Sun/Moon third-body vectors is a
+// separate, local, fully-fixed bug (see force_model.cpp::acceleration and
+// ephemeris.hpp::sunPositionTEME / moonPositionTEME).
 namespace ve {
 
     struct IntegratorParams {

@@ -160,9 +160,19 @@ struct FilterConfig {
     // EGM96 10x10 + Sun + Moon + drag + SRP).
     ve::ForceParams force_params{};
 
-    // Innovation-gate chi-squared threshold. Default 25 matches NLF SRUKF's
-    // default for NY=3; for NY=1 Doppler-only, 9 corresponds to 3-sigma.
-    double innovation_gate_chi2 = 9.0;
+    // Innovation-gate chi-squared threshold and outlier-rejection flag.
+    //
+    // NEWTON note (audit fix): the underlying NLF SRUKFSmoother does not
+    // expose its internal SRUKF, so the driver in od_smoother.cpp cannot
+    // wire these settings into the smoother's actual filter -- only the
+    // "monitor" SRUKF used for NIS reporting would receive them. Rather
+    // than silently discard caller intent, od::run enforces that these
+    // fields match NLF's built-in defaults (25.0 / false). Any other
+    // value causes od::run to throw. If per-mode gate control is needed,
+    // NLF's SRUKFSmoother must be patched (or subclassed with a public
+    // accessor) to expose its internal SRUKF.
+    static constexpr double NLF_DEFAULT_INNOVATION_GATE_CHI2 = 25.0;
+    double innovation_gate_chi2 = NLF_DEFAULT_INNOVATION_GATE_CHI2;
     bool   reject_outliers      = false;
 
     // Reference time for the oscillator drift term: b(t) = b_c + b_dot*(t - t_ref).

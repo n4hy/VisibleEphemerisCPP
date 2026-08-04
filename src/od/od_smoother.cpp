@@ -108,6 +108,26 @@ PassResult run(Mode mode,
                 "(no silent reordering)");
         }
     }
+    // NEWTON audit fix: NLF's SRUKFSmoother holds its SRUKF as a private
+    // member with no accessor, so the driver cannot wire caller-specified
+    // gate/reject settings into the actual filter that produces the
+    // returned trajectory. Refuse to run rather than silently discard.
+    // See FilterConfig::NLF_DEFAULT_INNOVATION_GATE_CHI2 for the constraint.
+    if (cfg.innovation_gate_chi2 != FilterConfig::NLF_DEFAULT_INNOVATION_GATE_CHI2) {
+        throw std::runtime_error(
+            "od::run: cfg.innovation_gate_chi2 must equal "
+            "FilterConfig::NLF_DEFAULT_INNOVATION_GATE_CHI2 (25.0); "
+            "the underlying NLF SRUKFSmoother does not expose gate wiring, "
+            "so any other value would be silently ignored on the smoother "
+            "trajectory. Patch NLF or leave at the default.");
+    }
+    if (cfg.reject_outliers) {
+        throw std::runtime_error(
+            "od::run: cfg.reject_outliers=true not supported: the "
+            "underlying NLF SRUKFSmoother does not expose the reject/scale "
+            "flag; leaving it at true would apply only to the monitor SRUKF "
+            "used for NIS reporting, not the returned trajectory.");
+    }
     // Build the OD state-space model and both filter and smoother.
     OrbitStateSpaceModel model(fm, cfg, input.jd_at_t_ref);
 
@@ -124,11 +144,10 @@ PassResult run(Mode mode,
 
     UKFCore::SRUKFSmoother<OD_STATE_DIM, OD_OBS_DIM> smoother(model);
     smoother.initialize(x0_f, P0_f);
-    // Innovation-gate handoff: NLF exposes it on the internal SRUKF only,
-    // which SRUKFSmoother does not surface directly. Left at NLF's default
-    // in this version; TODO for a follow-up if we need to tune it per-mode.
-    (void)cfg.innovation_gate_chi2;
-    (void)cfg.reject_outliers;
+    // Innovation gate + reject flag are enforced above to equal NLF's
+    // built-in defaults (25.0, false), so the SRUKFSmoother's inaccessible
+    // internal SRUKF and the monitor SRUKF below are guaranteed to run
+    // with identical thresholds. No handoff needed.
 
     PassResult result;
     result.t_utc.reserve(input.observations.size() + 1);

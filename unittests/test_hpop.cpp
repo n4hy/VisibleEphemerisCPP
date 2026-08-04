@@ -80,6 +80,51 @@ int main(){
     CHECK(ForceModel::atmosphereDensity(200) > ForceModel::atmosphereDensity(400),
           "atmospheric density decreases with altitude");
 
+    // 7. Precession rotation properties (audit fix: J2000 -> MOD/TEME).
+    {
+        // At J2000 the precession angles are zero, so the rotation is identity.
+        Vector3 v{1.0, 2.0, 3.0};
+        Vector3 v_id = precessJ2000ToMOD(2451545.0, v);
+        CHECK(mag(v_id - v) < 1e-15,
+              "precessJ2000ToMOD is identity at J2000 epoch");
+
+        // Rotation must be length-preserving (orthogonal).
+        Vector3 e1{1.0, 0.0, 0.0}, e2{0.0, 1.0, 0.0}, e3{0.0, 0.0, 1.0};
+        Vector3 r1 = precessJ2000ToMOD(jd, e1);
+        Vector3 r2 = precessJ2000ToMOD(jd, e2);
+        Vector3 r3 = precessJ2000ToMOD(jd, e3);
+        const double lenTol = 1e-13;
+        CHECK(std::fabs(mag(r1) - 1.0) < lenTol
+              && std::fabs(mag(r2) - 1.0) < lenTol
+              && std::fabs(mag(r3) - 1.0) < lenTol,
+              "precession rotates unit vectors to unit vectors");
+        // Orthogonality of the rotated basis (matrix rows are orthonormal too).
+        CHECK(std::fabs(r1.dot(r2)) < 1e-13
+              && std::fabs(r1.dot(r3)) < 1e-13
+              && std::fabs(r2.dot(r3)) < 1e-13,
+              "precession preserves orthogonality of basis vectors");
+
+        // TEME/MOD Sun/Moon distances match J2000 magnitudes (rotation-invariant).
+        double rs_teme = mag(sunPositionTEME(jd));
+        double rm_teme = mag(moonPositionTEME(jd));
+        CHECK(std::fabs(rs_teme - rs) < 1e-6,
+              "sunPositionTEME preserves geocentric distance from sunPositionECI");
+        CHECK(std::fabs(rm_teme - rm) < 1e-6,
+              "moonPositionTEME preserves geocentric distance from moonPositionECI");
+
+        // For a modern epoch (~26 years post-J2000) the angular rotation of the
+        // Sun should be of order 0.4 deg (dominant precession-in-longitude).
+        // Confirm it is nonzero and small.
+        Vector3 s_j2000 = sunPositionECI(jd);
+        Vector3 s_teme  = sunPositionTEME(jd);
+        double cos_ang = s_j2000.dot(s_teme) / (mag(s_j2000) * mag(s_teme));
+        // clamp for floating point
+        if (cos_ang > 1.0) cos_ang = 1.0;
+        double ang_deg = std::acos(cos_ang) * 180.0 / PI;
+        CHECK(ang_deg > 1e-4 && ang_deg < 1.0,
+              "Sun J2000 vs TEME angular separation is between 1e-4 and 1 degree");
+    }
+
     std::cout << (failures ? "\nTESTS FAILED\n" : "\nALL TESTS PASSED\n");
     return failures ? EXIT_FAILURE : EXIT_SUCCESS;
 }

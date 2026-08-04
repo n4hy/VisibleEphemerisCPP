@@ -198,6 +198,10 @@ if(BUILD_OD)
         add_executable(test_od_propagator unittests/test_od_propagator.cpp)
         target_link_libraries(test_od_propagator PRIVATE ve_od)
         add_test(NAME od_propagator COMMAND test_od_propagator)
+
+        add_executable(test_od_gate_guard unittests/test_od_gate_guard.cpp)
+        target_link_libraries(test_od_gate_guard PRIVATE ve_od)
+        add_test(NAME od_gate_guard COMMAND test_od_gate_guard)
     endif()
 
     # Benchmarks (opt-in separately -- can be slow).
