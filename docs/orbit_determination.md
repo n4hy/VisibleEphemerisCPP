@@ -103,6 +103,36 @@ rotation is via GMST only (`GmstRotation`), matching the rest of the
 tracker. **No GCRF conversion is performed anywhere in the OD path.**
 See §6 for the design decision.
 
+**F1a. TEME-as-inertial (Newton audit).** The propagator and OD subsystem
+both treat TEME as if it were an inertial frame, i.e. they omit the
+fictitious Coriolis and centrifugal terms that arise because TEME rotates
+relative to GCRS at the precession-nutation rate. For LEO,
+
+```
+|2 ω_p × v|          ≈ 2 · 7.7e-12 rad/s · 7.7 km/s   ≈ 1.2e-10 km/s²
+|ω_p × (ω_p × r)|    ≈ (7.7e-12)² · 7000 km            ≈ 4e-19 km/s²
+```
+
+These are dwarfed by SRP (~1e-9 km/s²), drag (~1e-8 km/s²), and Sun/Moon
+third-body (~1e-7 km/s²). Integrated over a day the suppressed Coriolis
+term accumulates to O(10 m) position error — a real physical effect, not
+merely a labelling one. It is left uncorrected because the propagator,
+observer look-angle code, SGP4 fallback, and OD filter are all made to
+agree in a single self-consistent TEME. A proper remedy requires
+TEME→GCRS state conversion at every acceleration evaluation *plus*
+matching observer / visibility updates; that whole-system frame rewrite
+is deferred and out of scope for the OD subsystem. Any OD result must be
+presented with this bound in the caveats. See
+`include/numerical_propagator.hpp` for the propagator-side version of
+this note.
+
+**F1b. Sun/Moon third-body frame (audit fix).** The Montenbruck-Gill
+analytic Sun/Moon ephemerides return vectors in the J2000 mean equator /
+mean equinox frame. `ForceModel::acceleration` uses the MOD-rotated
+variants `sunPositionTEME` / `moonPositionTEME` (IAU-1976 precession) so
+the third-body contribution and the geopotential contribution live in the
+same frame. This is a local, algebraic fix; it is unrelated to F1a.
+
 **F2. Units.** All positions in **kilometres**, velocities in
 **kilometres per second**, times in **seconds** since the pass epoch (a
 `double` counter) *for filter internals*. Times in **UTC Julian Date** at
@@ -159,12 +189,24 @@ d/dt x_orb = [ v
 ```
 
 where `a(·)` is `ForceModel::acceleration(jd, r, v)` from the existing
-propagator. Numerical integration is done by the same **Fehlberg RK7(8)**
-already in `NumericalPropagator`, called *inside* the filter's predict
-step. We do **not** reimplement integration; the filter treats
-`propagate(t_k → t_{k+1})` as an opaque black-box transition applied to
-each sigma point independently. This is the standard UKF-with-black-box-
-dynamics pattern (van der Merwe & Wan 2001).
+propagator. The filter treats `propagate(t_k → t_{k+1})` as a black-box
+transition applied to each sigma point independently — the standard
+UKF-with-black-box-dynamics pattern (van der Merwe & Wan 2001).
+
+**Integrator note (Newton audit).** The `NumericalPropagator` used by
+`--hpop` is an adaptive **Fehlberg RK7(8)** with per-step error control.
+The OD subsystem does **not** call it; it uses `od::integrate_rk4` in
+`src/od/od_dynamics.cpp`, a fixed-step classical **RK4** driven by the
+same `ForceModel`. The reason is cost: every SRUKF predict step evaluates
+`f` at all `2·NX + 1 = 17` sigma points, and the outer OD driver may run
+that predict step tens to hundreds of times per pass. A per-sigma-point
+adaptive RK7(8) with its own error control loop and re-tries would
+dominate the wall-clock budget without materially improving the ~1-second
+sigma-point propagation intervals used in a Doppler pass. The tradeoff is
+that any change that lengthens the sigma-point interval (e.g. sparser
+observation cadence) should re-verify RK4's local truncation against the
+Van Loan Q floor — for LEO at 1 s steps this is well below numerical
+noise, but the ordering is not guaranteed at 10 s or more.
 
 For the bias block:
 
@@ -187,11 +229,22 @@ geodetic `(lat, lon, alt)`:
 4. **Relativistic Doppler** (special-relativistic form, one-way):
 
 ```
-f_R / f_T = √(1 - β²) / (1 - β·ρ̂)     [Rindler, Relativity, §3.7]
+f_R / f_T = √(1 - β²) / (1 + β·ρ̂)     [Rindler, Relativity, §3.7]
 
   where β = v_rel / c is the source (satellite) velocity in the
   station rest frame; c = 299 792.458 km/s.
 ```
+
+The `+` sign in the denominator is load-bearing and follows from the
+`ρ̂ = station → satellite` convention adopted in step 2 above: light
+travels from source to observer in direction `-ρ̂`, so the standard SR
+form `1 - β_light` with `β_light = β·(-ρ̂) = -β·ρ̂` reduces to
+`(1 + β·ρ̂)` here. Recession then gives `β·ρ̂ > 0`, denominator `> 1`,
+`f_R < f_T` (redshift), as expected. An earlier draft of this section and
+of the header comment in `include/od/doppler_measurement.hpp` wrote
+`(1 - β·ρ̂)`; that was a documentation regression, not a code error, and
+was caught by unit test T4 (limit-case reduction to classical Doppler)
+plus the audit-fix pass on the header.
 
 For LEO (‖v‖ ≈ 7.7 km/s so β ≈ 2.6·10⁻⁵), the difference from the
 classical form `f_R/f_T ≈ 1 − ρ_dot/c` is of order β² ≈ 7·10⁻¹⁰, i.e.
