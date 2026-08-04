@@ -53,15 +53,40 @@ if(ENABLE_HAMLIB)
 endif()
 
 set(USER_HOME $ENV{HOME})
-set(PATHS_TO_CHECK "${USER_HOME}/sgp4/build/install" "/usr/local" "/usr")
 
+# SGP4 discovery. libsgp4 does not ship pkg-config / CMake config files, so
+# we do the search by hand -- but the search now respects CMAKE_PREFIX_PATH
+# and SGP4_ROOT before falling back to the historical hard-coded locations,
+# per the Newton audit hygiene fix. Order (most-specific to least):
+#   1. SGP4_ROOT (single-path override, either CMake cache or environment)
+#   2. CMAKE_PREFIX_PATH entries
+#   3. $HOME/sgp4/build/install, /usr/local, /usr (legacy fallbacks)
 message(STATUS "Searching for SGP4 Library...")
-set(SGP4_FOUND FALSE)
+set(SGP4_SEARCH_PATHS)
+if(DEFINED SGP4_ROOT)
+    list(APPEND SGP4_SEARCH_PATHS "${SGP4_ROOT}")
+endif()
+if(DEFINED ENV{SGP4_ROOT})
+    list(APPEND SGP4_SEARCH_PATHS "$ENV{SGP4_ROOT}")
+endif()
+foreach(p ${CMAKE_PREFIX_PATH})
+    list(APPEND SGP4_SEARCH_PATHS "${p}")
+endforeach()
+list(APPEND SGP4_SEARCH_PATHS
+    "${USER_HOME}/sgp4/build/install"
+    "/usr/local"
+    "/usr")
+list(REMOVE_DUPLICATES SGP4_SEARCH_PATHS)
 
-foreach(ROOT_PATH ${PATHS_TO_CHECK})
+set(SGP4_FOUND FALSE)
+foreach(ROOT_PATH ${SGP4_SEARCH_PATHS})
     if(NOT SGP4_FOUND)
-        find_library(SGP4_LIB_TEMP NAMES sgp4s libsgp4s PATHS ${ROOT_PATH}/lib ${ROOT_PATH}/lib64 NO_DEFAULT_PATH)
-        find_path(SGP4_INC_TEMP NAMES Tle.h SGP4.h PATHS ${ROOT_PATH}/include/libsgp4 ${ROOT_PATH}/include NO_DEFAULT_PATH)
+        find_library(SGP4_LIB_TEMP NAMES sgp4s libsgp4s
+                     PATHS ${ROOT_PATH}/lib ${ROOT_PATH}/lib64
+                     NO_DEFAULT_PATH)
+        find_path(SGP4_INC_TEMP NAMES Tle.h SGP4.h
+                  PATHS ${ROOT_PATH}/include/libsgp4 ${ROOT_PATH}/include
+                  NO_DEFAULT_PATH)
         if(SGP4_LIB_TEMP AND SGP4_INC_TEMP)
             set(SGP4_FOUND TRUE)
             set(SGP4_LIB ${SGP4_LIB_TEMP})
@@ -72,7 +97,10 @@ foreach(ROOT_PATH ${PATHS_TO_CHECK})
 endforeach()
 
 if(NOT SGP4_FOUND)
-    message(FATAL_ERROR "Could not find libsgp4s.so.")
+    message(FATAL_ERROR
+        "Could not find libsgp4s. Searched: ${SGP4_SEARCH_PATHS}. "
+        "Point CMake at your install with -DSGP4_ROOT=/path/to/install "
+        "or -DCMAKE_PREFIX_PATH=/path/to/install.")
 endif()
 
 set(SOURCES
@@ -135,6 +163,18 @@ if(BUILD_TESTS)
     target_include_directories(test_earth_rotation PRIVATE include)
     ve_target_warnings(test_earth_rotation)
     add_test(NAME earth_rotation COMMAND test_earth_rotation)
+
+    # Flare geometry tests -- previously built by a hand-rolled clang++ line
+    # in CI; now registered so `ctest` picks it up locally too.
+    add_executable(test_flare
+        unittests/test_flare.cpp
+        src/visibility.cpp
+        src/logger.cpp)
+    target_include_directories(test_flare PRIVATE include)
+    target_include_directories(test_flare SYSTEM PRIVATE ${SGP4_INCLUDE_DIR})
+    target_link_libraries(test_flare PRIVATE ${SGP4_LIB})
+    ve_target_warnings(test_flare)
+    add_test(NAME flare COMMAND test_flare)
 endif()
 
 # ----------------------------------------------------------------------------

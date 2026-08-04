@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cctype>
 #include <ctime>
+#include <sys/stat.h>
 
 namespace ve {
 
@@ -48,10 +49,35 @@ namespace ve {
             return std::string(home) + "/.config/visible-ephemeris/spacetrack.ini";
         }
 
+        // Audit fix: refuse to read the credentials INI unless it is readable
+        // only by the owner (mode 0600). The file stores the Space-Track
+        // password in plaintext, so a world- or group-readable file leaks the
+        // credential to every account on the host. Return true if the file
+        // does not exist (nothing to check) or if the mode is safe. Return
+        // false with a clear stderr message if the mode is too open.
+        bool credentialFileModeIsSafe(const std::string& path) {
+            struct stat st{};
+            if (::stat(path.c_str(), &st) != 0) return true;      // file absent
+            const mode_t bad = S_IRWXG | S_IRWXO;                  // any g / o bit
+            if (st.st_mode & bad) {
+                std::cerr << "[SPACETRACK] refusing to read "
+                          << path
+                          << ": world/group bits set (mode "
+                          << std::oct << (st.st_mode & 07777) << std::dec
+                          << "); run  chmod 600 " << path
+                          << "  and retry, or use SPACETRACK_USER / "
+                             "SPACETRACK_PASS env vars instead."
+                          << std::endl;
+                return false;
+            }
+            return true;
+        }
+
         // Very small INI parser: handles "[section]" headers and "key = value" lines,
         // skipping blanks and '#' / ';' comments.
         std::map<std::string, std::string> parseSpaceTrackIni(const std::string& path) {
             std::map<std::string, std::string> out;
+            if (!credentialFileModeIsSafe(path)) return out;
             std::ifstream f(path);
             if (!f.is_open()) return out;
             std::string line, section;

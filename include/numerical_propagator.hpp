@@ -81,6 +81,12 @@ namespace ve {
         Vector3 r_cur_{0, 0, 0}, v_cur_{0, 0, 0}; // checkpoint, always on a natural step boundary
         double h_hint_ = 60.0;                 // adaptive step carried between calls
         bool valid_ = false;
+        // Audit-fix diagnostics: track integrator-quality signals so they
+        // are visible instead of silently swallowed. Latched once-per-flavour
+        // so a long propagation with a persistently bad regime does not
+        // spam the log.
+        mutable bool warned_at_floor_ = false;        // step accepted at min_step_sec
+        mutable bool warned_partial_step_ = false;    // final partial step exceeded tol
         mutable std::mutex mtx_;
     };
 }

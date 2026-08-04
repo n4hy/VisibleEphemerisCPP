@@ -152,6 +152,13 @@ namespace ve {
 
             bool at_floor = (hmag <= ip_.min_step_sec * 1.0000001);
             if (err <= 1.0 || at_floor) {
+                if (at_floor && err > 1.0 && !warned_at_floor_) {
+                    Logger::log("NumericalPropagator: step accepted at "
+                                "min_step_sec floor with error norm "
+                                + std::to_string(err)
+                                + " > 1 (further such events silent)");
+                    warned_at_floor_ = true;
+                }
                 t += h; r = r_new; v = v_new;
                 double s = (err > 0.0) ? 0.9 * std::pow(err, -0.125) : 5.0;
                 s = std::min(5.0, std::max(0.2, s));
@@ -179,6 +186,18 @@ namespace ve {
         Vector3 r_ans, v_ans;
         double err;
         rkStep(t, dir * rem, r, v, r_ans, v_ans, err);
+        // Audit-fix diagnostic: this step is executed outside the accept/reject
+        // loop; the error norm is only trustworthy as a diagnostic, not as a
+        // gate. Warn once if it lands above 1 so a caller running with tight
+        // tolerances knows the final landing on the target epoch missed spec.
+        if (err > 1.0 && !warned_partial_step_) {
+            Logger::log("NumericalPropagator: final partial step to target "
+                        "epoch exceeded tolerance (err norm "
+                        + std::to_string(err)
+                        + " > 1); this step is not re-tried by design "
+                        "(further such events silent)");
+            warned_partial_step_ = true;
+        }
         return {r_ans, v_ans};
     }
 

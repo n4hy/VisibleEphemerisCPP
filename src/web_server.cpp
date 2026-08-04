@@ -109,7 +109,23 @@ namespace ve {
 
         var markers = {}; var polylines = {};
 
-        function toggleView() { 
+        // Audit fix: HTML-escape any string that will be inserted via
+        // innerHTML. Satellite names come from Celestrak / Space-Track TLEs
+        // over an unauthenticated link and can contain arbitrary characters
+        // including angle brackets. Without this helper a hostile name like
+        // '<img src=x onerror=alert(1)>' would fire in every browser tab
+        // viewing this dashboard.
+        function esc(s) {
+            if (s === null || s === undefined) return '';
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function toggleView() {
             currentView = (currentView==='map') ? 'sky' : 'map'; 
             document.getElementById('map').style.display = (currentView==='map')?'block':'none';
             document.getElementById('skyplot').style.display = (currentView==='sky')?'block':'none';
@@ -205,8 +221,8 @@ namespace ve {
                     visCls = 'vis-DAY';
                     displayName += " (F)";
                 }
-                html += `<tr class="${cls}" onclick="selectSat(${s.id})">
-                    <td>${displayName}</td><td>${s.a.toFixed(1)}</td><td>${s.e.toFixed(1)}</td><td>${s.next}</td><td class="${visCls}">${statusText}</td></tr>`;
+                html += `<tr class="${esc(cls)}" onclick="selectSat(${s.id})">
+                    <td>${esc(displayName)}</td><td>${s.a.toFixed(1)}</td><td>${s.e.toFixed(1)}</td><td>${esc(s.next)}</td><td class="${esc(visCls)}">${esc(statusText)}</td></tr>`;
             });
             document.getElementById('sat-list').innerHTML = html;
             updateHeaders();

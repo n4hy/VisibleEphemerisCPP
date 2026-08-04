@@ -133,6 +133,30 @@ variants `sunPositionTEME` / `moonPositionTEME` (IAU-1976 precession) so
 the third-body contribution and the geopotential contribution live in the
 same frame. This is a local, algebraic fix; it is unrelated to F1a.
 
+**F1c. Station kinematics use GMST only.** `station_position_teme` and
+`station_velocity_teme` in `src/od/doppler_measurement.cpp` rotate the
+WGS-84 station geodetic to TEME via a bare z-rotation by `getGMST(t)` --
+they do NOT apply the equation of the equinoxes or full IAU2006/2000A
+nutation. This is deliberate: it matches `ve::Observer` in the tracker's
+main visibility path bit-for-bit, so all frame conventions inside the OD
+subsystem (F1) are internally consistent. The absolute pointing error
+this introduces is < 1.3 arcsec (equation of equinoxes) and biases the
+predicted Doppler by a coherent but small amount that the estimated
+oscillator bias `bc` can largely absorb over a pass. If the tracker is
+ever switched to `IAU2000Rotation` end-to-end, these two helpers must be
+updated in lockstep with `ve::Observer`.
+
+**F1d. Filter internals run in single precision.** NLF's
+`UKFModel::StateSpaceModel<NX, NY>` templates on `float`, so the SRUKF
+state and covariance are float32. The driver widens to `double` at every
+`f(...)` / `h(...)` boundary (`include/od/orbit_ssm.hpp`), so the
+`ForceModel` and Doppler geometry are computed in double. Float32 at r
+~ 7000 km gives ~1 mm state resolution -- adequate for Doppler-only LEO
+tracking at 5 Hz measurement noise, but leaves no headroom for future
+metre-precision range observables. Removing the constraint would require
+patching NLF to double-precision templates and rebuilding the vendored
+library.
+
 **F2. Units.** All positions in **kilometres**, velocities in
 **kilometres per second**, times in **seconds** since the pass epoch (a
 `double` counter) *for filter internals*. Times in **UTC Julian Date** at

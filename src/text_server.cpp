@@ -11,8 +11,31 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
-#include <fcntl.h> 
+#include <fcntl.h>
 #include <arpa/inet.h>
+
+namespace {
+    // Audit fix: escape HTML-special characters in the mirrored terminal
+    // frame before wrapping it in <body>. The frame text contains satellite
+    // names sourced from unauthenticated TLE feeds; without escaping, a
+    // malicious name like "<img src=x onerror=alert(1)>" would execute in
+    // any browser viewing the mirror.
+    std::string htmlEscape(const std::string& in) {
+        std::string out;
+        out.reserve(in.size());
+        for (char c : in) {
+            switch (c) {
+                case '&':  out += "&amp;";  break;
+                case '<':  out += "&lt;";   break;
+                case '>':  out += "&gt;";   break;
+                case '"':  out += "&quot;"; break;
+                case '\'': out += "&#39;";  break;
+                default:   out += c;        break;
+            }
+        }
+        return out;
+    }
+}
 
 namespace ve {
     TextServer::TextServer(int port, bool bind_all)
@@ -80,11 +103,11 @@ namespace ve {
                     local_view = current_text_view_;
                 }
                 
-                std::string content = 
+                std::string content =
                     "<!DOCTYPE html><html><head><meta http-equiv='refresh' content='1'>"
                     "<title>Visible Ephemeris Terminal</title>"
                     "<style>body { background: #000; color: #0f0; font-family: monospace; font-size: 14px; white-space: pre; }</style>"
-                    "</head><body>" + local_view + "</body></html>";
+                    "</head><body>" + htmlEscape(local_view) + "</body></html>";
                 
                 // 4. SEND WITH CONTENT-LENGTH
                 std::string response = "HTTP/1.0 200 OK\r\n"

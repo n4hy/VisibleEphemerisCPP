@@ -97,16 +97,9 @@ jobs:
       - name: Build
         run: cmake --build build -j"$(nproc)"
 
-      - name: ctest (hpop + earth_rotation)
+      - name: ctest (hpop + earth_rotation + flare)
         working-directory: build
         run: ctest --output-on-failure
-
-      - name: Flare unit test
-        run: |
-          clang++ -std=c++17 -Iinclude \
-            unittests/test_flare.cpp src/visibility.cpp \
-            -o /tmp/test_flare
-          /tmp/test_flare
 
       - name: HPOP-vs-SGP4 24-hour ISS benchmark (compare_iss)
         run: build/compare_iss | tee compare_iss.log

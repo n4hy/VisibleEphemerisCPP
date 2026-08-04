@@ -67,7 +67,29 @@ DopplerPrediction predict_doppler(
     const ve::Vector3 r_stn = station_position_teme(station, t);
     const ve::Vector3 v_stn = station_velocity_teme(station, t);
 
-    const ve::Vector3 rho = r_sat - r_stn;
+    // First-order light-time (retardation) correction (audit fix).
+    //
+    // The photons arriving at t = t_obs were emitted at t_emit = t_obs - tau
+    // where tau = |rho| / c is the one-way light travel time. To first order
+    // the satellite position at emission is
+    //     r_sat_ret = r_sat(t_obs) - v_sat(t_obs) * tau
+    // and the receiver-side geometry (r_stn, v_stn) is evaluated at t_obs.
+    // For LEO tau ~ 17 ms and this shifts rho by ~130 m along-track, giving
+    // a coherent ~1 Hz within-pass Doppler bias that we now remove.
+    //
+    // The analytical Jacobian doppler_jacobian() below is derived at the
+    // INSTANTANEOUS limit tau -> 0; treating the retardation as a constant
+    // introduces a relative Jacobian error of O(v/c) ~ 2.5e-5 for LEO,
+    // well below the T3 finite-difference tolerance of 5e-4. If a future
+    // caller needs the exact linearisation (e.g. an EKF at GEO where
+    // beta is larger), the Jacobian must be rederived with tau treated as
+    // a state-dependent quantity.
+    const ve::Vector3 rho_inst = r_sat - r_stn;
+    const double s_inst = rho_inst.magnitude();
+    const double tau_sec = s_inst / C_KM_S;
+    const ve::Vector3 r_sat_ret = r_sat - v_sat * tau_sec;
+
+    const ve::Vector3 rho = r_sat_ret - r_stn;
     const double s = rho.magnitude();
     const ve::Vector3 rho_hat = (s > 0.0) ? (rho * (1.0 / s)) : ve::Vector3{0,0,0};
     const ve::Vector3 v_rel = v_sat - v_stn;
