@@ -10,7 +10,7 @@
 #include <iomanip>
 
 namespace ve {
-    Display::Display() : scroll_offset_(0), input_mode_(InputMode::NORMAL), last_frame_buffer_("Waiting for data..."), last_key_debug_(0) {
+    Display::Display() : input_mode_(InputMode::NORMAL), scroll_offset_(0), last_frame_buffer_("Waiting for data..."), last_key_debug_(0) {
         initscr();
         cbreak();
         noecho();
@@ -141,7 +141,7 @@ namespace ve {
 
             for (int i = 0; i < available_lines; ++i) {
                 int data_idx = scroll_offset_ + i;
-                if (data_idx >= rows.size()) {
+                if (data_idx >= static_cast<int>(rows.size())) {
                     move(start_y + i, 0); clrtoeol(); continue;
                 }
                 const auto& r = rows[data_idx];

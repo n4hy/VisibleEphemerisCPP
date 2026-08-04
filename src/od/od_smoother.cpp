@@ -9,6 +9,20 @@
 // gate repeatedly, that is reported (via PassResult.nis and any warnings)
 // and it is the user's job to decide whether the model or the data is
 // at fault -- not this code's.
+//
+// Newton note (RTS smoother is NOT true square-root, audit finding): the
+// name SRUKFSmoother in NLF is aspirational. The forward SRUKF really does
+// carry a Cholesky factor S and update it via QR + rank-one downdate, which
+// is the numerically stable form. The BACKWARD (RTS) pass, however,
+// reconstructs P_pred = S_pred * S_pred^T and P_f = S_filt * S_filt^T,
+// forms the RTS gain in the standard non-SR way (G = P_cross * P_pred^-1),
+// applies P_s = P_f + G (P_s' - P_pred) G^T, and re-Choleskys the result.
+// The RTS recursion itself is algebraically Rauch-Tung-Striebel; only the
+// numerical guarantees of the square-root formulation are lost. For an
+// eight-state, well-conditioned pass this is not observably harmful, but
+// for very long arcs or near-singular P it could. Fixing this properly
+// requires patching NLF to expose a true square-root URTS (Sarkka's form),
+// which is out of scope for this driver.
 
 #include "od/od_smoother.hpp"
 #include "od/orbit_ssm.hpp"

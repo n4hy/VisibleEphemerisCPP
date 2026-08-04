@@ -18,7 +18,8 @@
 #include <errno.h>
 
 namespace ve {
-    PhysicsServer::PhysicsServer(int port) : port_(port), server_fd_(-1), running_(false), data_updated_(false) {
+    PhysicsServer::PhysicsServer(int port, bool bind_all)
+        : port_(port), server_fd_(-1), bind_all_(bind_all), running_(false), data_updated_(false) {
         server_fd_ = socket(AF_INET, SOCK_STREAM, 0);
         if (server_fd_ < 0) throw std::runtime_error("PhysicsServer: Failed to create socket");
 
@@ -27,7 +28,7 @@ namespace ve {
 
         sockaddr_in address;
         address.sin_family = AF_INET;
-        address.sin_addr.s_addr = INADDR_ANY;
+        address.sin_addr.s_addr = htonl(bind_all_ ? INADDR_ANY : INADDR_LOOPBACK);
         address.sin_port = htons(port_);
 
         if (bind(server_fd_, (struct sockaddr*)&address, sizeof(address)) < 0) {
@@ -42,7 +43,8 @@ namespace ve {
         // Set server socket to non-blocking for clean shutdown
         fcntl(server_fd_, F_SETFL, O_NONBLOCK);
 
-        Logger::log("PhysicsServer started on port " + std::to_string(port_));
+        Logger::log("PhysicsServer started on port " + std::to_string(port_)
+                    + " (bind=" + (bind_all_ ? "0.0.0.0" : "127.0.0.1") + ")");
     }
 
     PhysicsServer::~PhysicsServer() {

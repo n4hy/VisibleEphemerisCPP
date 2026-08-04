@@ -16,6 +16,7 @@
 #include "force_model.hpp"
 #include "ephemeris.hpp"
 #include "egm96_coeffs.hpp"
+#include "earth_rotation.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -98,8 +99,11 @@ namespace ve {
     }
 
     Vector3 ForceModel::gravityAccel(double jd, const Vector3& r_eci) const {
-        // Rotate ECI -> ECEF by GMST about z.
-        double th = gmstFromJD(jd);
+        // Rotate ECI -> ECEF about z. Angle is GMST by default (TEME-consistent
+        // with the rest of the tracker) or GAST = GMST + Eqn(Equinoxes) when
+        // ForceParams::use_iau2000_rotation is set, matching IAU2000Rotation
+        // in earth_rotation.hpp.
+        double th = p_.use_iau2000_rotation ? gastFromJD(jd) : gmstFromJD(jd);
         double cth = std::cos(th), sth = std::sin(th);
         double x =  cth * r_eci.x + sth * r_eci.y;
         double y = -sth * r_eci.x + cth * r_eci.y;
@@ -158,7 +162,9 @@ namespace ve {
             }
         }
         double scale = GM / (R * R);
-        // Acceleration in ECEF, rotate back to ECI by -GMST.
+        // Acceleration in ECEF, rotate back to ECI by -theta (theta = GMST
+        // or GAST depending on use_iau2000_rotation, matching the forward
+        // rotation used at the top of this function).
         double aex = scale * ax, aey = scale * ay, aez = scale * az;
         return { cth * aex - sth * aey, sth * aex + cth * aey, aez };
     }

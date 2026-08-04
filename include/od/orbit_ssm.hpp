@@ -112,42 +112,63 @@ public:
         return y;
     }
 
-    // Diagonal process-noise covariance for the interval ending at t_k_sec.
-    // Continuous-time model:
+    // Process-noise covariance for the interval ending at t_k_sec.
+    //
+    // Continuous-time model (per Cartesian axis, three copies):
     //     dot(r) = v
-    //     dot(v) = a(r,v,t) + w_a          w_a ~ N(0, q_a^2 I_3)   [km/s^2]
+    //     dot(v) = a(r,v,t) + w_a          w_a ~ WSS white,
+    //                                       PSD q_a^2  [km^2 / s^3]
     //     dot(bc) = b_dot                                          [Hz]
-    //     dot(bd) = w_b                    w_b ~ N(0, q_b^2)       [Hz/s]
+    //     dot(bd) = w_b                    w_b ~ WSS white,
+    //                                       PSD q_bd^2 [(Hz/s)^2 / s]
     //
-    // Discretising with a simple Euler-white-noise-integral gives:
-    //     Q_v  = q_a^2 * dt * I_3          [km^2/s^2] (variance on v)
-    //     Q_bc = q_bc^2 * dt               [Hz^2]
-    //     Q_bd = q_bd^2 * dt               [(Hz/s)^2]
-    //     Q_r  = 0                         (position driven by velocity)
+    // Van Loan / closed-form discretisation of the double-integrator block
+    // gives, per axis (Bar-Shalom, Estimation with Applications to Tracking
+    // and Navigation, Eq. 6.3.2-4):
     //
-    // This is a *simple* Q; a Van Loan discretisation would produce cross
-    // (r-v) blocks. Kept diagonal in v0 as documented in docs §7.3.
+    //     Q_rr = q_a^2 * dt^3 / 3
+    //     Q_rv = q_a^2 * dt^2 / 2
+    //     Q_vv = q_a^2 * dt
+    //
+    // The earlier v0 implementation zeroed Q_rr and Q_rv and added a fixed
+    // 1e-6 km^2 position regulariser (see Newton audit); that under-modelled
+    // position uncertainty in a way that grew with dt. Full Van Loan closes
+    // the algebraic gap. The r-v cross term is set symmetrically so the
+    // resulting sub-block is PD for any dt > 0 (its determinant per axis is
+    // q_a^4 * dt^4 / 12).
+    //
+    // dt is taken as the absolute-value difference; the interval-sign is
+    // handled by the integrator, not by Q. Q is required to be PD, not
+    // signed. For dt = 0 the block collapses to zero (no time has passed);
+    // callers must not sample-and-hold on a zero-length interval.
+    //
+    // The oscillator bias/drift block remains simply Euler-discretised
+    // (bc gets bc^2*dt from its white driver, bd similarly) since those
+    // are scalar chains that the CV algebra does not couple to r,v.
     StateMat Q(float t_k_sec) const override {
         StateMat Qm = StateMat::Zero();
         const double dt = static_cast<double>(t_k_sec) - static_cast<double>(t_prev_sec_);
         const double dt_abs = std::abs(dt);
-        const double q_a  = cfg_.sigma_process_accel;
-        const double q_bc = cfg_.sigma_process_bc;
-        const double q_bd = cfg_.sigma_process_bd;
-        const float v_var  = static_cast<float>(q_a  * q_a  * dt_abs);
-        const float bc_var = static_cast<float>(q_bc * q_bc * dt_abs);
-        const float bd_var = static_cast<float>(q_bd * q_bd * dt_abs);
-        Qm(idx::VX, idx::VX) = v_var;
-        Qm(idx::VY, idx::VY) = v_var;
-        Qm(idx::VZ, idx::VZ) = v_var;
-        Qm(idx::BC, idx::BC) = bc_var;
-        Qm(idx::BD, idx::BD) = bd_var;
-        // A tiny position regulariser keeps the sqrt-Q Cholesky in NLF's
-        // SRUKF non-singular. Chosen as 1e-6 km^2 (1 mm^2) -- below numerical
-        // noise but nonzero.
-        Qm(idx::RX, idx::RX) = 1e-6f;
-        Qm(idx::RY, idx::RY) = 1e-6f;
-        Qm(idx::RZ, idx::RZ) = 1e-6f;
+        const double q_a2  = cfg_.sigma_process_accel * cfg_.sigma_process_accel;
+        const double q_bc2 = cfg_.sigma_process_bc    * cfg_.sigma_process_bc;
+        const double q_bd2 = cfg_.sigma_process_bd    * cfg_.sigma_process_bd;
+
+        // Constant-velocity double-integrator block (per Cartesian axis).
+        const double dt2 = dt_abs * dt_abs;
+        const double dt3 = dt2 * dt_abs;
+        const float qrr = static_cast<float>(q_a2 * dt3 / 3.0);
+        const float qrv = static_cast<float>(q_a2 * dt2 / 2.0);
+        const float qvv = static_cast<float>(q_a2 * dt_abs);
+        const int r_idx[3] = { idx::RX, idx::RY, idx::RZ };
+        const int v_idx[3] = { idx::VX, idx::VY, idx::VZ };
+        for (int i = 0; i < 3; ++i) {
+            Qm(r_idx[i], r_idx[i]) = qrr;
+            Qm(v_idx[i], v_idx[i]) = qvv;
+            Qm(r_idx[i], v_idx[i]) = qrv;
+            Qm(v_idx[i], r_idx[i]) = qrv;
+        }
+        Qm(idx::BC, idx::BC) = static_cast<float>(q_bc2 * dt_abs);
+        Qm(idx::BD, idx::BD) = static_cast<float>(q_bd2 * dt_abs);
         return Qm;
     }
 

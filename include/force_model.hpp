@@ -34,6 +34,17 @@ namespace ve {
         double Cd = 2.2;          // drag coefficient
         double Cr = 1.3;          // radiation-pressure coefficient
         double bstar = 0.0;       // TLE B* drag term [1/earth radii]
+
+        // When true, the ECI<->ECEF rotation used inside gravityAccel uses
+        // GAST = GMST + Equation of the Equinoxes (IAU 1982 nutation) instead
+        // of bare GMST. The equinoxes correction is ~1.3 arcsec at most and
+        // removes the same bias from the geopotential force as it does from
+        // the visibility path. Left OFF by default so the propagator, the
+        // visibility code (default rotator = GmstRotation), and the SGP4
+        // fallback all agree in one self-consistent frame; flip to true only
+        // when the visibility side is also switched to IAU2000Rotation, so
+        // the whole tracker stays coherent.
+        bool use_iau2000_rotation = false;
     };
 
     class ForceModel {

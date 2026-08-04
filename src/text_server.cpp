@@ -15,19 +15,23 @@
 #include <arpa/inet.h>
 
 namespace ve {
-    TextServer::TextServer(int port) : port_(port), server_fd_(-1), running_(false) {
+    TextServer::TextServer(int port, bool bind_all)
+        : port_(port), server_fd_(-1), bind_all_(bind_all), running_(false) {
         // BIND IN CONSTRUCTOR TO FAIL FAST
         server_fd_ = socket(AF_INET, SOCK_STREAM, 0);
         if (server_fd_ < 0) throw std::runtime_error("TextServer: Failed to create socket");
-        
+
         int opt = 1; setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-        
-        sockaddr_in address; address.sin_family = AF_INET; address.sin_addr.s_addr = INADDR_ANY; address.sin_port = htons(port_);
+
+        sockaddr_in address; address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(bind_all_ ? INADDR_ANY : INADDR_LOOPBACK);
+        address.sin_port = htons(port_);
         if (bind(server_fd_, (struct sockaddr*)&address, sizeof(address)) < 0) {
             throw std::runtime_error("TextServer: Failed to bind port " + std::to_string(port_));
         }
         if (listen(server_fd_, 10) < 0) throw std::runtime_error("TextServer: Failed to listen");
-        Logger::log("TextServer started on port " + std::to_string(port_));
+        Logger::log("TextServer started on port " + std::to_string(port_)
+                    + " (bind=" + (bind_all_ ? "0.0.0.0" : "127.0.0.1") + ")");
     }
 
     TextServer::~TextServer() { stop(); }
@@ -63,9 +67,11 @@ namespace ve {
                 struct timeval t_out; t_out.tv_sec = 0; t_out.tv_usec = 200000; // 200ms timeout
                 setsockopt(new_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&t_out, sizeof(t_out));
                 
-                // 2. Drain Request Buffer
-                char buffer[4096]; 
-                int r = read(new_socket, buffer, 4096); 
+                // 2. Drain Request Buffer (bytes discarded -- mirror is
+                //    unauthenticated read-only; we only care that the client
+                //    sent something so read() unblocks).
+                char buffer[4096];
+                (void)read(new_socket, buffer, 4096);
 
                 // 3. PREPARE RESPONSE IMMEDIATELY
                 std::string local_view;

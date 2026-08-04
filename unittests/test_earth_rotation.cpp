@@ -4,8 +4,8 @@
 //                        include/earth_rotation.hpp.
 //
 // Build (standalone, matches the existing test_flare.cpp style):
-//   clang++ -std=c++17 -O2 -I../include unittests/test_earth_rotation.cpp \
-//     ../src/visibility.cpp -o test_earth_rotation
+//   clang++ -std=c++17 -O2 -I../include unittests/test_earth_rotation.cpp
+//   ../src/visibility.cpp -o test_earth_rotation
 //
 // Run:
 //   ./test_earth_rotation

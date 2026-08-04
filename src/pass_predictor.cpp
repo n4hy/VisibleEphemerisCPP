@@ -31,7 +31,8 @@ namespace ve {
             double deriv = (el_plus - el);            // deg per second
             if (std::abs(deriv) < 1e-5) break;        // flat: cannot improve
             double delta_sec = el / deriv;
-            if (delta_sec > 600) delta_sec = 600; if (delta_sec < -600) delta_sec = -600;
+            if (delta_sec >  600) delta_sec =  600;
+            if (delta_sec < -600) delta_sec = -600;
             t = t - std::chrono::milliseconds((long)(delta_sec * 1000));
         }
         return t;

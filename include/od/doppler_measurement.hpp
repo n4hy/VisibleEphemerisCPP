@@ -79,20 +79,25 @@ double predict_doppler_hz(
 //   (a) unit test T3 -- finite-difference agreement to 1e-6 relative;
 //   (b) fallback EKF path in a future v1.
 //
-// Derivation (Newton-annotated so reviewers can verify each step):
+// Derivation (Newton-annotated so reviewers can verify each step). This
+// tracks the (1 + g) sign convention used in predict_doppler above, which
+// arises because rho_hat = station -> satellite and light travels in
+// direction -rho_hat (from source to observer). An earlier draft of this
+// comment used (1 - g); that was a documentation regression and did not
+// match the implementation.
 //
 //   Let rho = r - r_s(t),  s = ||rho||,   rho_hat = rho / s.
 //   Let v_rel = v - v_s(t),  beta = v_rel / c.
 //   Let g = beta . rho_hat  =  (v_rel . rho) / (c s)     [scalar]
 //   Let b2 = beta . beta   =  |v_rel|^2 / c^2            [scalar]
-//   f_R = f_T * sqrt(1 - b2) / (1 - g)  +  b_c  +  b_dot * (t - t_ref)
+//   f_R = f_T * sqrt(1 - b2) / (1 + g)  +  b_c  +  b_dot * (t - t_ref)
 //
 //   Only r, v, b_c, b_dot are state components. Station position and
 //   velocity are functions of t only.
 //
-//   d f_R / d r_i   = f_T * (sqrt(1 - b2) / (1 - g)^2) * (d g / d r_i)
-//   d f_R / d v_i   = f_T * [ (-beta_i / (c sqrt(1-b2))) / (1 - g)
-//                             + (sqrt(1-b2) / (1 - g)^2) * (d g / d v_i) ]
+//   d f_R / d r_i   =  -f_T * (sqrt(1 - b2) / (1 + g)^2) * (d g / d r_i)
+//   d f_R / d v_i   = f_T * [ (-beta_i / (c sqrt(1-b2))) / (1 + g)
+//                             -  (sqrt(1-b2) / (1 + g)^2) * (d g / d v_i) ]
 //   d f_R / d b_c   = 1
 //   d f_R / d b_dot = (t - t_ref)         [seconds]
 //
@@ -101,6 +106,12 @@ double predict_doppler_hz(
 //              = (v_rel_i - (v_rel . rho_hat) rho_hat_i) / (c s)
 //              = (component of v_rel perpendicular to rho_hat)_i / (c s)
 //   d g / d v_i = rho_hat_i / c
+//
+// The implementation (doppler_measurement.cpp) writes this via a common
+// prefactor K_g = -f_T * sqrt(1-b2) / (1 + g)^2  which multiplies both
+// d g / d r_i and d g / d v_i, plus an additional velocity-only term
+// vel_prefactor_b2 = -f_T / (c^2 sqrt(1-b2) (1 + g)) * v_rel_i from
+// differentiating sqrt(1 - b2) with respect to v_i.
 //
 // The Jacobian is single-scalar (Doppler is scalar) -> returned as a
 // 1xOD_STATE_DIM Eigen row.

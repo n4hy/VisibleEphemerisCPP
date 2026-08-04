@@ -18,7 +18,10 @@ namespace ve {
     // Only sends data when clients are connected
     class PhysicsServer {
     public:
-        PhysicsServer(int port);
+        // bind_all: true = bind INADDR_ANY (LAN-visible), false = 127.0.0.1
+        //   only. Default off; the stream broadcasts live satellite state
+        //   frames to any connected client with no authentication.
+        PhysicsServer(int port, bool bind_all = false);
         ~PhysicsServer();
         void start();
         void stop();
@@ -34,6 +37,7 @@ namespace ve {
     private:
         int port_;
         int server_fd_;
+        bool bind_all_;
         std::atomic<bool> running_;
         std::thread accept_thread_;
         std::thread broadcast_thread_;

@@ -65,7 +65,6 @@ static void t2_station_kinematics() {
     // station-side changes to Doppler. The change should be O(omega * baseline)
     // in the range, which is O(few km/s in velocity, O(kHz-scale) in Doppler
     // for a 1.6 GHz carrier).
-    const double dt = 1.0;
     TimePoint t1 = t0 + std::chrono::seconds(1);
     double f0 = predict_doppler_hz(x, t0, f_T, station, t0);
     double f1 = predict_doppler_hz(x, t1, f_T, station, t0);

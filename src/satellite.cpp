@@ -15,8 +15,8 @@
 #include <CoordGeodetic.h>
 
 namespace ve {
-    Satellite::Satellite(std::string name, std::string line1, std::string line2) 
-        : name_(std::move(name)), is_computing(false) {
+    Satellite::Satellite(std::string name, std::string line1, std::string line2)
+        : is_computing(false), name_(std::move(name)) {
         try {
             tle_object_ = std::make_unique<libsgp4::Tle>(name_, line1, line2);
             sgp4_object_ = std::make_unique<libsgp4::SGP4>(*tle_object_);

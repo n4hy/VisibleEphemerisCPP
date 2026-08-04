@@ -33,7 +33,11 @@ namespace ve {
     }
 
     Vector3 sunPositionECI(double jd) {
-        double T = (jd - 2451545.0) / 36525.0;
+        // Convert the input UTC JD to TT for the Montenbruck-Gill series
+        // (see ephemeris.hpp header). Negligible impact on acceleration but
+        // eliminates a diagnosable ~2000 km angular Sun-position error.
+        const double jd_tt = jd + TT_MINUS_UTC_S / 86400.0;
+        double T = (jd_tt - 2451545.0) / 36525.0;
         // Mean anomaly and ecliptic longitude (radians).
         double M = TWO_PI * frac(0.9931267 + 99.9973583 * T);
         double L = TWO_PI * frac(0.7859444 + M / TWO_PI +
@@ -45,7 +49,9 @@ namespace ve {
     }
 
     Vector3 moonPositionECI(double jd) {
-        double T = (jd - 2451545.0) / 36525.0;
+        // Convert the input UTC JD to TT for the Montenbruck-Gill series.
+        const double jd_tt = jd + TT_MINUS_UTC_S / 86400.0;
+        double T = (jd_tt - 2451545.0) / 36525.0;
         // Fundamental arguments (radians where noted).
         double L0 = frac(0.606433 + 1336.851344 * T);              // mean longitude (rev)
         double l  = TWO_PI * frac(0.374897 + 1325.552410 * T);     // Moon mean anomaly

@@ -19,6 +19,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(ENABLE_HAMLIB "Enable Hamlib support" ON)
 
+# Warning flags applied to first-party targets (via ve_target_warnings()).
+# Kept off vendored headers by marking third-party includes SYSTEM further
+# down. -Wpedantic catches non-standard extensions; -Werror is opt-in so a
+# transient GCC-version-specific warning does not block builds on a random
+# CI runner.
+option(VE_WARNINGS_AS_ERRORS "Promote first-party warnings to errors" OFF)
+function(ve_target_warnings tgt)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        target_compile_options(${tgt} PRIVATE
+            -Wall -Wextra -Wpedantic
+            -Wno-unused-parameter)
+        if(VE_WARNINGS_AS_ERRORS)
+            target_compile_options(${tgt} PRIVATE -Werror)
+        endif()
+    endif()
+endfunction()
+
 find_package(CURL REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Curses REQUIRED) 
@@ -79,9 +96,12 @@ set(SOURCES
 )
 
 include_directories(include)
-include_directories(${SGP4_INCLUDE_DIR})
+# SGP4, curses, hamlib are third-party -- mark SYSTEM so their headers do
+# not trigger our -Wpedantic warnings.
+include_directories(SYSTEM ${SGP4_INCLUDE_DIR})
 
 add_executable(VisibleEphemeris ${SOURCES})
+ve_target_warnings(VisibleEphemeris)
 
 set(LIBS ${SGP4_LIB} CURL::libcurl Threads::Threads ${CURSES_LIBRARIES})
 if(ENABLE_HAMLIB)
@@ -105,12 +125,15 @@ if(BUILD_TESTS)
         src/force_model.cpp
         src/numerical_propagator.cpp
         src/logger.cpp)
-    target_include_directories(test_hpop PRIVATE include ${SGP4_INCLUDE_DIR})
+    target_include_directories(test_hpop PRIVATE include)
+    target_include_directories(test_hpop SYSTEM PRIVATE ${SGP4_INCLUDE_DIR})
     target_link_libraries(test_hpop PRIVATE ${SGP4_LIB})
+    ve_target_warnings(test_hpop)
     add_test(NAME hpop COMMAND test_hpop)
 
     add_executable(test_earth_rotation unittests/test_earth_rotation.cpp)
     target_include_directories(test_earth_rotation PRIVATE include)
+    ve_target_warnings(test_earth_rotation)
     add_test(NAME earth_rotation COMMAND test_earth_rotation)
 endif()
 
@@ -125,8 +148,10 @@ if(BUILD_EXAMPLES)
         src/force_model.cpp
         src/numerical_propagator.cpp
         src/logger.cpp)
-    target_include_directories(compare_iss PRIVATE include ${SGP4_INCLUDE_DIR})
+    target_include_directories(compare_iss PRIVATE include)
+    target_include_directories(compare_iss SYSTEM PRIVATE ${SGP4_INCLUDE_DIR})
     target_link_libraries(compare_iss PRIVATE ${SGP4_LIB})
+    ve_target_warnings(compare_iss)
 endif()
 
 # ----------------------------------------------------------------------------
@@ -171,13 +196,18 @@ if(BUILD_OD)
         src/ephemeris.cpp
         src/logger.cpp)
     target_include_directories(ve_od PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/include)
+    # Third-party (SGP4, Eigen via imported target, NLF) marked SYSTEM so
+    # -Wpedantic warnings from those headers do not fight our warning-clean
+    # first-party code.
+    target_include_directories(ve_od SYSTEM PUBLIC
         ${SGP4_INCLUDE_DIR})
     target_link_libraries(ve_od PUBLIC
         Eigen3::Eigen
         nlf::nlf
         OptMathKernels::OptMathKernels
         ${SGP4_LIB})
+    ve_target_warnings(ve_od)
     # Force C++20 for ve_od because NLF uses <numbers> and other C++20 constructs.
     target_compile_features(ve_od PUBLIC cxx_std_20)
 
@@ -185,23 +215,33 @@ if(BUILD_OD)
     if(BUILD_TESTS)
         add_executable(test_od_frames unittests/test_od_frames.cpp)
         target_link_libraries(test_od_frames PRIVATE ve_od)
+        ve_target_warnings(test_od_frames)
         add_test(NAME od_frames COMMAND test_od_frames)
 
         add_executable(test_od_doppler unittests/test_od_doppler.cpp)
         target_link_libraries(test_od_doppler PRIVATE ve_od)
+        ve_target_warnings(test_od_doppler)
         add_test(NAME od_doppler COMMAND test_od_doppler)
 
         add_executable(test_od_srukf_linear unittests/test_od_srukf_linear.cpp)
         target_link_libraries(test_od_srukf_linear PRIVATE ve_od)
+        ve_target_warnings(test_od_srukf_linear)
         add_test(NAME od_srukf_linear COMMAND test_od_srukf_linear)
 
         add_executable(test_od_propagator unittests/test_od_propagator.cpp)
         target_link_libraries(test_od_propagator PRIVATE ve_od)
+        ve_target_warnings(test_od_propagator)
         add_test(NAME od_propagator COMMAND test_od_propagator)
 
         add_executable(test_od_gate_guard unittests/test_od_gate_guard.cpp)
         target_link_libraries(test_od_gate_guard PRIVATE ve_od)
+        ve_target_warnings(test_od_gate_guard)
         add_test(NAME od_gate_guard COMMAND test_od_gate_guard)
+
+        add_executable(test_od_end_to_end unittests/test_od_end_to_end.cpp)
+        target_link_libraries(test_od_end_to_end PRIVATE ve_od)
+        ve_target_warnings(test_od_end_to_end)
+        add_test(NAME od_end_to_end COMMAND test_od_end_to_end)
     endif()
 
     # Benchmarks (opt-in separately -- can be slow).

@@ -154,10 +154,14 @@ static CaseSummary run_case(const std::string& name,
     cfg.prior_rsw.sigma_v_cross  = 0.001;
     cfg.prior_rsw.sigma_bc = 100.0;
     cfg.prior_rsw.sigma_bd = 1.0;
-    // Loosen the innovation gate for the synthetic case where large early
-    // innovations from unknown oscillator bias are expected. Chi2 = 100 is
-    // ~10-sigma; effectively "never reject". A real deployment tightens this.
-    cfg.innovation_gate_chi2 = 100.0;
+    // NLF-default gate (25.0, ~5-sigma for NY=1) enforced by the OD
+    // driver guard -- setting anything else throws. The synthetic case
+    // used to loosen this to chi2=100 to tolerate large early innovations
+    // from an unknown oscillator bias, but that value was silently
+    // discarded on the smoother trajectory anyway (audit finding);
+    // the visible large-innovation transient is now genuinely being
+    // scaled by the gate at chi2=25 rather than merely appearing
+    // scaled in the diagnostic.
 
     od::IterationConfig ic;
     ic.max_iterations = (mode == od::Mode::D_Iterated) ? 5 : 1;

@@ -21,8 +21,14 @@
 namespace ve {
     class WebServer {
     public:
-        // builder_mode: true = Mission Planner, false = Dashboard
-        WebServer(int port, TLEManager& tle_mgr, bool builder_mode);
+        // builder_mode: true = Mission Planner, false = Dashboard.
+        // bind_all: true = bind INADDR_ANY (LAN-accessible), false = bind
+        //   127.0.0.1 only (loopback / same-host clients only). Default off
+        //   for security -- the dashboard has no authentication and mutates
+        //   server state via /api/select. Set true only when the LAN is
+        //   trusted or an external reverse proxy provides auth.
+        WebServer(int port, TLEManager& tle_mgr, bool builder_mode,
+                  bool bind_all = false);
         ~WebServer();
         
         void start(); // Non-blocking (for Tracker)
@@ -40,6 +46,7 @@ namespace ve {
         int port_;
         int server_fd_;
         bool builder_mode_;
+        bool bind_all_;
         std::atomic<bool> running_;
         std::thread server_thread_;
         std::atomic<int> selected_norad_id_{0};

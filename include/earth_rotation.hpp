@@ -104,8 +104,12 @@ namespace ve {
     // date.  The standard short series uses the dominant nutation
     // terms in longitude (delta_psi) and the mean obliquity
     // (epsilon_A).
-    inline double equationOfEquinoxes_IAU1982(const TimePoint& t) {
-        double jd = toJulianDate(t);
+    //
+    // Two entry points: one taking a Julian Date (used by the HPOP
+    // gravity path, which already lives in JD), and one taking a
+    // TimePoint (kept for the visibility pipeline that predates the
+    // JD-based force model). Both share the same underlying math.
+    inline double equationOfEquinoxes_IAU1982_jd(double jd) {
         double T = (jd - 2451545.0) / 36525.0;            // Julian centuries TT (approx UTC)
 
         // Mean obliquity of the ecliptic (IAU 1980), in radians.
@@ -148,6 +152,16 @@ namespace ve {
         double dpsi = dpsi_as * AS2RAD;
 
         return dpsi * std::cos(eps);                      // E_e (radians)
+    }
+
+    inline double equationOfEquinoxes_IAU1982(const TimePoint& t) {
+        return equationOfEquinoxes_IAU1982_jd(toJulianDate(t));
+    }
+
+    // Greenwich Apparent Sidereal Time from Julian Date: GMST + E_e.
+    // Suitable for TEME -> ITRS rotations against SGP4 output.
+    inline double gastFromJD(double jd) {
+        return gmstFromJD(jd) + equationOfEquinoxes_IAU1982_jd(jd);
     }
 
     // TEME -> ITRS rotation: Rz(GAST) where GAST = GMST + E_e.

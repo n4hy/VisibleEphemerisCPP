@@ -380,14 +380,20 @@ namespace ve {
 
     // ... (WebServer Implementation with 3-arg constructor same as previous bundle) ...
     
-    WebServer::WebServer(int port, TLEManager& tle_mgr, bool builder_mode) 
-        : port_(port), server_fd_(-1), running_(false), tle_mgr_(tle_mgr), builder_mode_(builder_mode) {
+    WebServer::WebServer(int port, TLEManager& tle_mgr, bool builder_mode,
+                         bool bind_all)
+        : port_(port), server_fd_(-1), builder_mode_(builder_mode),
+          bind_all_(bind_all), running_(false), tle_mgr_(tle_mgr) {
         server_fd_ = socket(AF_INET, SOCK_STREAM, 0);
         int opt = 1; setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-        sockaddr_in address; address.sin_family = AF_INET; address.sin_addr.s_addr = INADDR_ANY; address.sin_port = htons(port_);
+        sockaddr_in address; address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(bind_all_ ? INADDR_ANY : INADDR_LOOPBACK);
+        address.sin_port = htons(port_);
         bind(server_fd_, (struct sockaddr*)&address, sizeof(address));
         listen(server_fd_, 10);
-        std::cout << "[INFO] WebServer started on port " << port_ << " (Mode: " << (builder_mode ? "BUILDER" : "TRACKER") << ")" << std::endl;
+        std::cout << "[INFO] WebServer started on port " << port_
+                  << " (bind=" << (bind_all_ ? "0.0.0.0" : "127.0.0.1")
+                  << ", Mode: " << (builder_mode ? "BUILDER" : "TRACKER") << ")" << std::endl;
     }
 
     WebServer::~WebServer() { stop(); }
@@ -428,7 +434,18 @@ namespace ve {
     }
 
     std::string WebServer::urlDecode(const std::string& str) {
-        std::string ret; for (size_t i=0; i < str.length(); i++) { if(str[i] != '%'){ if(str[i] == '+') ret += ' '; else ret += str[i]; } else { int ii; sscanf(str.substr(i + 1, 2).c_str(), "%x", &ii); ret += static_cast<char>(ii); i += 2; } } return ret;
+        std::string ret;
+        for (size_t i = 0; i < str.length(); i++) {
+            if (str[i] != '%') {
+                ret += (str[i] == '+') ? ' ' : str[i];
+            } else {
+                unsigned int ii = 0;
+                sscanf(str.substr(i + 1, 2).c_str(), "%x", &ii);
+                ret += static_cast<char>(ii);
+                i += 2;
+            }
+        }
+        return ret;
     }
     std::map<std::string, std::string> WebServer::parseQuery(const std::string& query) {
         std::map<std::string, std::string> data; std::stringstream ss(query); std::string item;

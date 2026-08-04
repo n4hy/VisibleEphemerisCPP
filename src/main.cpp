@@ -183,6 +183,12 @@ int main(int argc, char* argv[]) {
     int port_web = 8080;
     int port_text = 12345;
     int port_physics = 12346;
+    // Server bind policy: default 127.0.0.1 (loopback only, safe by default).
+    // --bind-any flips all three servers to INADDR_ANY, exposing the dashboard,
+    // terminal mirror, and physics stream to the LAN. None of them have
+    // authentication or CSRF protection, so enable only on trusted networks
+    // (or behind a reverse proxy that adds auth).
+    bool bind_any = false;
 
     // DECOUPLED CLOCK VARIABLES
     std::time_t display_epoch = 0;  // Start time (Face Value)
@@ -194,6 +200,7 @@ int main(int argc, char* argv[]) {
         std::string arg = argv[i];
         if (arg == "--groupbuild") builder_mode = true;
         else if (arg == "--refresh") refresh_tle = true;
+        else if (arg == "--bind-any") bind_any = true;
         else if (arg == "--time") {
             if (i+1 < argc) {
                 std::string t_str = argv[++i];
@@ -379,8 +386,8 @@ int main(int argc, char* argv[]) {
         // --- PHASE 1: BUILDER MODE ---
         if (builder_mode) {
             std::cout << "Starting Mission Planner UI on port " << port_web << "..." << std::endl;
-            WebServer builder_server(port_web, tle_mgr, true);
-            builder_server.runBlocking(); 
+            WebServer builder_server(port_web, tle_mgr, true, bind_any);
+            builder_server.runBlocking();
             std::cout << "Configuration saved. Launching Tracker..." << std::endl;
             config = config_mgr.load(); 
         }
@@ -440,9 +447,9 @@ int main(int argc, char* argv[]) {
             Logger::log("HPOP enabled for " + std::to_string(enabled) + " satellites");
         }
 
-        WebServer web_server(port_web, tle_mgr, false);
-        TextServer text_server(port_text);
-        PhysicsServer physics_server(port_physics);
+        WebServer web_server(port_web, tle_mgr, false, bind_any);
+        TextServer text_server(port_text, bind_any);
+        PhysicsServer physics_server(port_physics, bind_any);
         
         Observer observer(config.lat, config.lon, config.alt);
         Display display; 
@@ -463,8 +470,6 @@ int main(int argc, char* argv[]) {
         text_server.start();
         physics_server.start();
 
-        auto last_calc_time = Clock::now();
-        bool first_run = true;
         SharedState state;
         std::atomic<bool> running(true);
 

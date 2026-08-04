@@ -280,8 +280,8 @@ visibility) is unchanged.
 
 | Perturbation | Model |
 |:--|:--|
-| Earth gravity | **EGM96** spherical harmonics (Cunningham/Pines recursion), evaluated Earth-fixed via GMST. Default degree/order 10, selectable up to 20 via `--hpop-degree`. Coefficients embedded in the binary. |
-| Third body | Sun and Moon point-mass (Montenbruck-Gill analytic ephemerides) |
+| Earth gravity | **EGM96** spherical harmonics (Cunningham/Pines recursion), evaluated Earth-fixed via GMST. Default degree/order 10, selectable up to 20 via `--hpop-degree`. Coefficients embedded in the binary. Set `ForceParams::use_iau2000_rotation = true` to use GAST (GMST + Eqn of Equinoxes, IAU 1982 nutation) instead of bare GMST for the ECI↔ECEF rotation; do this only alongside switching the visibility path to `IAU2000Rotation`, so the whole tracker stays in one self-consistent frame. |
+| Third body | Sun and Moon point-mass (Montenbruck-Gill analytic ephemerides). Vectors are rotated from J2000 into the mean equator / mean equinox of date (MOD ≈ TEME) via IAU-1976 precession before entering the acceleration sum, so the third-body contribution lives in the same frame as the integrated state. |
 | Atmospheric drag | Piecewise-exponential density (Vallado); co-rotating atmosphere. Ballistic coefficient `Cd·A/m = 2·B*/0.15696615` derived from the TLE B* term |
 | Solar radiation pressure | `4.56e-6 N/m²` at 1 AU, cylindrical Earth-shadow; `Cr·A/m` shared from the drag area |
 
@@ -695,6 +695,19 @@ path — run it first, then start the tracker normally.
 ## Network Services
 
 Visible Ephemeris exposes three network interfaces. Ports can be overridden with the `--port` argument using comma-separated values (e.g., `--port 9000,9001,9002`). Use empty values to keep defaults (e.g., `--port ,,12349` changes only the physics port).
+
+**Bind policy (security default).** All three servers bind to `127.0.0.1`
+(loopback) by default. None of them implement authentication, CSRF, or
+input sanitisation on the reflected satellite metadata, so exposing them
+to the LAN is opt-in via `--bind-any`:
+
+```bash
+# Loopback only (default; safe): dashboard reachable via ssh port-forward
+./VisibleEphemeris
+
+# LAN-visible (requires trusted network or an external reverse proxy)
+./VisibleEphemeris --bind-any
+```
 
 ### Graphical Dashboard: `http://<IP>:8080` (default)
 * Interactive Mercator map with satellite positions and ground tracks

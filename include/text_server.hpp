@@ -15,7 +15,10 @@
 namespace ve {
     class TextServer {
     public:
-        TextServer(int port);
+        // bind_all: true = bind INADDR_ANY (LAN-visible), false = bind
+        //   127.0.0.1 only. Default off; the mirror leaks observer / sat
+        //   metadata to any client, so LAN exposure must be opted into.
+        TextServer(int port, bool bind_all = false);
         ~TextServer();
         void start();
         void stop();
@@ -24,6 +27,7 @@ namespace ve {
     private:
         int port_;
         int server_fd_;
+        bool bind_all_;
         std::atomic<bool> running_;
         std::thread server_thread_;
         std::mutex data_mutex_;
