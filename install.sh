@@ -78,10 +78,10 @@ fi
 if [ "$UNINSTALL" = "1" ]; then
     log "Removing Visible Ephemeris ($MODE install)…"
     $SUDO rm -rf "$PY_ROOT"
-    for f in ve-ide ve-orbital-architect-qt ve-hpop-panel ve-tracker; do
+    for f in ve-ide ve-orbital-architect-qt ve-hpop-panel ve-live-od ve-tracker; do
         $SUDO rm -f "$BIN_DIR/$f"
     done
-    for f in ve-ide.desktop ve-orbital-architect-qt.desktop ve-hpop-panel.desktop; do
+    for f in ve-ide.desktop ve-orbital-architect-qt.desktop ve-hpop-panel.desktop ve-live-od.desktop; do
         $SUDO rm -f "$APPS_DIR/$f"
     done
     ok "Uninstalled."
@@ -169,15 +169,18 @@ $SUDO mkdir -p "$BIN_DIR"
 write_launcher ve-ide                  python_tracker.qt_dashboards.ve_ide
 write_launcher ve-orbital-architect-qt python_tracker.qt_dashboards.orbital_architect_qt
 write_launcher ve-hpop-panel           python_tracker.qt_dashboards.hpop_panel
+write_launcher ve-live-od              python_tracker.qt_dashboards.live_od_panel
 
 write_launcher ve-tracker              python_tracker.main
-ok "Launchers installed: ve-ide  ve-orbital-architect-qt  ve-hpop-panel  ve-tracker"
+ok "Launchers installed: ve-ide  ve-orbital-architect-qt  ve-hpop-panel  ve-live-od  ve-tracker"
 
 # ---------- desktop entries ----------
 log "Installing desktop entries to $APPS_DIR"
 $SUDO mkdir -p "$APPS_DIR"
-for f in ve-ide.desktop ve-orbital-architect-qt.desktop ve-hpop-panel.desktop; do
-    $SUDO install -m 0644 "$REPO_ROOT/packaging/desktop/$f" "$APPS_DIR/$f"
+for f in ve-ide.desktop ve-orbital-architect-qt.desktop ve-hpop-panel.desktop ve-live-od.desktop; do
+    if [ -f "$REPO_ROOT/packaging/desktop/$f" ]; then
+        $SUDO install -m 0644 "$REPO_ROOT/packaging/desktop/$f" "$APPS_DIR/$f"
+    fi
 done
 if command -v update-desktop-database >/dev/null 2>&1; then
     $SUDO update-desktop-database -q "$APPS_DIR" 2>/dev/null || true

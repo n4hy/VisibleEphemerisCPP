@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Live Orbit Determination
+GenericName=Doppler-driven state-vector refinement
+Comment=Ingest a beacon Doppler stream (Hamlib or raw socket) and improve a TLE-seeded state estimate live
+Exec=ve-live-od
+Icon=applications-science
+Terminal=false
+Categories=Science;Astronomy;HamRadio;
+Keywords=satellite;orbit;determination;doppler;hamlib;beacon;
+StartupNotify=true
+StartupWMClass=ve-live-od
