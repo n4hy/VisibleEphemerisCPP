@@ -12,7 +12,6 @@ import time
 import datetime
 import os
 import sys
-import subprocess
 import concurrent.futures
 
 # Platform-specific imports for keyboard handling
@@ -48,11 +47,18 @@ except ImportError:
     import physics_server
 
 def clear_screen():
-    """Clears the console screen."""
-    if os.name == 'nt':
-        subprocess.run(['cls'], shell=True, check=False)
-    else:
-        subprocess.run(['clear'], check=False)
+    """Clears the console screen.
+
+    Audit fix: use the ANSI clear+home sequence instead of shelling out to
+    'cls' (Windows) or 'clear' (POSIX). The old Windows branch had
+    ``shell=True`` because 'cls' is a cmd.exe built-in, not an executable
+    -- removing the shell removes the class of vulnerability where an
+    attacker-controlled PATH element could shadow the command. Modern
+    Windows terminals (Win10+ Console, Terminal, plus every POSIX
+    terminal) handle ANSI escapes natively, so the sequence is portable.
+    """
+    sys.stdout.write("\x1b[2J\x1b[H")
+    sys.stdout.flush()
 
 class KeyPoller:
     """Non-blocking single-key reader.

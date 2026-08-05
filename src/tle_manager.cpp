@@ -267,6 +267,28 @@ namespace ve {
     }
 
     std::string TLEManager::historicalCachePath(const std::string& group_or_key, std::time_t date) {
+        // Audit fix (path traversal): validate `group_or_key` against a
+        // conservative filename whitelist [A-Za-z0-9_-]. Every callsite of
+        // this helper concatenates the segment directly into a filesystem
+        // path, so a hostile --groupsel like "../../etc/passwd" would
+        // otherwise escape the cache root. Throw on violation rather than
+        // silently coerce, so the user notices immediately.
+        if (group_or_key.empty()) {
+            throw std::runtime_error(
+                "TLEManager::historicalCachePath: empty cache key rejected");
+        }
+        for (char c : group_or_key) {
+            bool ok = (c >= 'A' && c <= 'Z')
+                   || (c >= 'a' && c <= 'z')
+                   || (c >= '0' && c <= '9')
+                   || c == '_' || c == '-';
+            if (!ok) {
+                throw std::runtime_error(
+                    "TLEManager::historicalCachePath: invalid cache key '"
+                    + group_or_key
+                    + "' (only [A-Za-z0-9_-] allowed; path-traversal guard)");
+            }
+        }
         std::string dir = cache_dir_ + "/historical/" + formatDate(date);
         std::filesystem::create_directories(dir);
         return dir + "/" + group_or_key + ".txt";
