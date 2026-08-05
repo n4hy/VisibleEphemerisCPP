@@ -226,7 +226,7 @@ if(BUILD_OD)
     find_package(OptMathKernels REQUIRED)
     find_package(nlf REQUIRED)
 
-    add_library(ve_od STATIC
+    add_library(ve_od_lib STATIC
         src/od/od_types.cpp
         src/od/od_dynamics.cpp
         src/od/tle_to_state.cpp
@@ -235,51 +235,53 @@ if(BUILD_OD)
         src/force_model.cpp
         src/ephemeris.cpp
         src/logger.cpp)
-    target_include_directories(ve_od PUBLIC
+    target_include_directories(ve_od_lib PUBLIC
         ${CMAKE_SOURCE_DIR}/include)
     # Third-party (SGP4, Eigen via imported target, NLF) marked SYSTEM so
     # -Wpedantic warnings from those headers do not fight our warning-clean
     # first-party code.
-    target_include_directories(ve_od SYSTEM PUBLIC
+    target_include_directories(ve_od_lib SYSTEM PUBLIC
         ${SGP4_INCLUDE_DIR})
-    target_link_libraries(ve_od PUBLIC
+    target_link_libraries(ve_od_lib PUBLIC
         Eigen3::Eigen
         nlf::nlf
         OptMathKernels::OptMathKernels
         ${SGP4_LIB})
-    ve_target_warnings(ve_od)
-    # Force C++20 for ve_od because NLF uses <numbers> and other C++20 constructs.
-    target_compile_features(ve_od PUBLIC cxx_std_20)
+    ve_target_warnings(ve_od_lib)
+    # Force C++20 for ve_od_lib because NLF uses <numbers> and other C++20 constructs.
+    target_compile_features(ve_od_lib PUBLIC cxx_std_20)
+    # PIC so ve_od_lib.a can be linked into the ve_od pybind11 shared module.
+    set_property(TARGET ve_od_lib PROPERTY POSITION_INDEPENDENT_CODE ON)
 
     # Unit tests
     if(BUILD_TESTS)
         add_executable(test_od_frames unittests/test_od_frames.cpp)
-        target_link_libraries(test_od_frames PRIVATE ve_od)
+        target_link_libraries(test_od_frames PRIVATE ve_od_lib)
         ve_target_warnings(test_od_frames)
         add_test(NAME od_frames COMMAND test_od_frames)
 
         add_executable(test_od_doppler unittests/test_od_doppler.cpp)
-        target_link_libraries(test_od_doppler PRIVATE ve_od)
+        target_link_libraries(test_od_doppler PRIVATE ve_od_lib)
         ve_target_warnings(test_od_doppler)
         add_test(NAME od_doppler COMMAND test_od_doppler)
 
         add_executable(test_od_srukf_linear unittests/test_od_srukf_linear.cpp)
-        target_link_libraries(test_od_srukf_linear PRIVATE ve_od)
+        target_link_libraries(test_od_srukf_linear PRIVATE ve_od_lib)
         ve_target_warnings(test_od_srukf_linear)
         add_test(NAME od_srukf_linear COMMAND test_od_srukf_linear)
 
         add_executable(test_od_propagator unittests/test_od_propagator.cpp)
-        target_link_libraries(test_od_propagator PRIVATE ve_od)
+        target_link_libraries(test_od_propagator PRIVATE ve_od_lib)
         ve_target_warnings(test_od_propagator)
         add_test(NAME od_propagator COMMAND test_od_propagator)
 
         add_executable(test_od_gate_guard unittests/test_od_gate_guard.cpp)
-        target_link_libraries(test_od_gate_guard PRIVATE ve_od)
+        target_link_libraries(test_od_gate_guard PRIVATE ve_od_lib)
         ve_target_warnings(test_od_gate_guard)
         add_test(NAME od_gate_guard COMMAND test_od_gate_guard)
 
         add_executable(test_od_end_to_end unittests/test_od_end_to_end.cpp)
-        target_link_libraries(test_od_end_to_end PRIVATE ve_od)
+        target_link_libraries(test_od_end_to_end PRIVATE ve_od_lib)
         ve_target_warnings(test_od_end_to_end)
         add_test(NAME od_end_to_end COMMAND test_od_end_to_end)
     endif()
@@ -287,10 +289,10 @@ if(BUILD_OD)
     # Benchmarks (opt-in separately -- can be slow).
     if(BUILD_OD_BENCHMARKS)
         add_executable(bench_synthetic     benchmarks/bench_synthetic.cpp)
-        target_link_libraries(bench_synthetic PRIVATE ve_od)
+        target_link_libraries(bench_synthetic PRIVATE ve_od_lib)
 
         add_executable(bench_iss_pass      benchmarks/bench_iss_pass.cpp)
-        target_link_libraries(bench_iss_pass PRIVATE ve_od)
+        target_link_libraries(bench_iss_pass PRIVATE ve_od_lib)
     endif()
 endif()
 
@@ -331,7 +333,18 @@ if(BUILD_PYTHON_BINDINGS)
         src/force_model.cpp
         src/numerical_propagator.cpp
         src/logger.cpp)
-    target_include_directories(ve_hpop PRIVATE include ${SGP4_INCLUDE_DIR})
+    target_include_directories(ve_hpop PRIVATE include)
+    target_include_directories(ve_hpop SYSTEM PRIVATE ${SGP4_INCLUDE_DIR})
     target_link_libraries(ve_hpop PRIVATE ${SGP4_LIB})
     message(STATUS "Python bindings (ve_hpop) will be built.")
+
+    # ve_od bindings require the OD subsystem; only add the module if BUILD_OD
+    # is also on, so pybind11-only builds don't try to pull in NLF.
+    if(BUILD_OD)
+        pybind11_add_module(ve_od
+            src/od/python_bindings_od.cpp)
+        target_link_libraries(ve_od PRIVATE ve_od_lib)
+        target_compile_features(ve_od PRIVATE cxx_std_20)
+        message(STATUS "Python bindings (ve_od) will be built.")
+    endif()
 endif()
